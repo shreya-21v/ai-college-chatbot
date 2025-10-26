@@ -14,30 +14,45 @@ def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Create a 'users' table
+    # Create a 'users' table (matches User model)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password TEXT NOT NULL
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL
         )
     ''')
 
-    # Create a 'conversations' table
+    # Create a 'conversations' table (matches Chat model)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS conversations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            user_message TEXT NOT NULL,
-            bot_response TEXT NOT NULL,
+            message TEXT NOT NULL,
+            response TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
 
+    # Create a 'courses' table (matches Course model)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            instructor TEXT NOT NULL
+        )
+    ''')
+
+    # These lines MUST come AFTER all the execute() commands
     print("Database tables created successfully.")
     conn.commit()
     conn.close()
+
+    
 
 # This allows to run this file directly to set up the database
 if __name__ == '__main__':
