@@ -47,6 +47,33 @@ def create_tables():
         )
     ''')
 
+    # (Inside create_tables function, after CREATE TABLE courses...)
+
+    # Create a 'grades' table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            course_id INTEGER NOT NULL,
+            grade TEXT NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES users (id),
+            FOREIGN KEY (course_id) REFERENCES courses (id)
+        )
+    ''')
+
+    # Create a 'schedules' table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_id INTEGER NOT NULL,
+            day_of_week TEXT NOT NULL, 
+            start_time TEXT NOT NULL, 
+            end_time TEXT NOT NULL,
+            location TEXT,
+            FOREIGN KEY (course_id) REFERENCES courses (id)
+        )
+    ''')
+
     # These lines MUST come AFTER all the execute() commands
     print("Database tables created successfully.")
     conn.commit()

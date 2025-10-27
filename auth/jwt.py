@@ -36,6 +36,7 @@ def verify_token(token: str, credentials_exception):
 # This is a dependency that your API routes will use
 # to get the currently logged-in user
 # REPLACE your old get_current_user function with this new one
+# REPLACE your old get_current_user function with this new one
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -43,19 +44,22 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     payload = verify_token(token, credentials_exception)
-
+    
     email: str = payload.get("sub")
-
+    
     # Get user details from the database using the email
     conn = database.get_db_connection()
-    db_user = conn.execute('SELECT id, role, email FROM users WHERE email = ?', (email,)).fetchone()
+    # ----> MODIFIED THIS QUERY to include 'name' <----
+    db_user = conn.execute('SELECT id, name, role, email FROM users WHERE email = ?', (email,)).fetchone() 
     conn.close()
-
+    
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Return a complete user dictionary
-    return {"user_id": db_user['id'], "role": db_user['role'], "email": db_user['email']}
+    # ----> MODIFIED THIS RETURN to include 'name' <----
+    # NEW CORRECTED RETURN STATEMENT
+    return {"id": db_user['id'], "name": db_user['name'], "role": db_user['role'], "email": db_user['email']}
 
 # REPLACE your old require_role function with this new one
 def require_role(required_roles: List[str]):
