@@ -70,5 +70,18 @@ class Schedule(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+# (Inside models/schemas.py)
+class GradeCreate(BaseModel):
+    student_id: int
+    course_id: int
+    grade: str
+
+class ScheduleCreate(BaseModel):
+    course_id: int
+    day_of_week: str
+    start_time: str
+    end_time: str
+    location: Optional[str] = None
+
     
     

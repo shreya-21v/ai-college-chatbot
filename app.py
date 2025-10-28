@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import urllib.parse
 
 # --- Configuration ---
 BACKEND_URL = "http://127.0.0.1:8000"  # Your FastAPI server URL
@@ -97,16 +98,50 @@ if 'chat_history' not in st.session_state:
 
 # --- 1. LOGIN PAGE ---
 if not st.session_state['logged_in']:
-    st.title("Welcome to the AI College Chatbot")
-    st.subheader("Please log in to continue")
+    st.title("Welcome to the Brindavan College AI Chatbot! 🤖")
+    
+    col1, col2 = st.columns(2) # Create two columns for layout
 
-    with st.form("login_form"):
-        username = st.text_input("Email (Username)")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
-        
-        if submitted:
-            login_user(username, password)
+    with col1: # Login form in the left column
+        st.subheader("Please log in")
+        with st.form("login_form"):
+            username = st.text_input("Email (Username)")
+            password = st.text_input("Password", type="password")
+            submitted_login = st.form_submit_button("Login")
+            
+            if submitted_login:
+                login_user(username, password)
+
+    with col2: # Registration form in the right column
+        st.subheader("New Student? Register Here")
+        with st.form("register_form", clear_on_submit=True):
+            reg_name = st.text_input("Full Name")
+            reg_email = st.text_input("Email")
+            reg_password = st.text_input("Choose Password", type="password")
+            # Automatically set role to 'student' for self-registration
+            reg_role = "student" 
+            submitted_register = st.form_submit_button("Register")
+
+            if submitted_register:
+                if not reg_name or not reg_email or not reg_password:
+                    st.warning("Please fill out all registration fields.")
+                else:
+                    user_data = {
+                        "name": reg_name,
+                        "email": reg_email,
+                        "password": reg_password,
+                        "role": reg_role 
+                    }
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/register", json=user_data)
+                        if response.status_code == 200: # FastAPI register returns 200 on success
+                            st.success("Registration successful! Please log in.")
+                        elif response.status_code == 400: # Bad request (e.g., email exists)
+                            st.error(f"Registration failed: {response.json().get('detail', 'Unknown error')}")
+                        else:
+                            st.error(f"Registration failed: {response.text}")
+                    except Exception as e:
+                        st.error(f"Error during registration: {e}")
 
 # --- 2. MAIN APP INTERFACE (Role-Based) ---
 else:
@@ -120,11 +155,15 @@ else:
     if user_role == "student":
         available_pages.append("Grades")
         available_pages.append("Schedules")
+        available_pages.append("Instructor Schedules")
     if user_role in ["staff", "admin"]:
         available_pages.append("Course Management")
         available_pages.append("Student Data")
+        available_pages.append("Reports")
+        available_pages.append("Instructor Schedules")
     if user_role == "admin":
         available_pages.append("User Management")
+        available_pages.append("Analytics")
         
     # Page selection in the sidebar
     page = st.sidebar.radio("Navigate", available_pages)
@@ -265,6 +304,44 @@ else:
         except Exception as e:
             st.error(f"An error occurred fetching student data: {e}")
 
+    # (Inside the main 'else' block, add this after 'Student Data'
+#  and before 'Course Management')
+
+    elif page == "Reports":
+        st.title("📊 Reports")
+
+        token = f"Bearer {st.session_state.get('access_token')}"
+        headers = {"Authorization": token}
+
+        st.subheader("Grade Distribution per Course")
+
+        try:
+            response = requests.get(f"{BACKEND_URL}/reports/grade-distribution", headers=headers)
+
+            if response.status_code == 200:
+                report_data = response.json()
+                if report_data:
+                    for course_name, grade_counts in report_data.items():
+                        st.markdown(f"**{course_name}**") # Course name as sub-header
+                        if grade_counts:
+                            # Display counts (e.g., "A: 5, B: 10")
+                            grades_str = ", ".join([f"{grade}: {count}" for grade, count in sorted(grade_counts.items())])
+                            st.write(grades_str)
+                        else:
+                            st.write("No grades recorded for this course.")
+                        st.divider() # Separator between courses
+                else:
+                    st.write("No grade data available to generate report.")
+            elif response.status_code == 403:
+                st.error("Access denied. Staff or Admin only.")
+            else:
+                st.error(f"Failed to fetch report data: {response.text}")
+
+        except Exception as e:
+            st.error(f"An error occurred fetching the report: {e}")
+
+
+
     elif page == "Course Management":
         st.title("📚 Course Management")
         st.write("Here you can view, add, edit, and delete courses.")
@@ -301,8 +378,103 @@ else:
                             st.error(f"Error adding course: {e}")
 
         st.divider()
+    # (Inside elif page == "Course Management":)
 
-        # --- Section to Display Existing Courses ---
+        # --- Section to Add a Grade ---
+        with st.expander("🎓 Add Grade for Student"):
+            # Fetch students and courses for dropdowns
+            try:
+                students_resp = requests.get(f"{BACKEND_URL}/students", headers=headers)
+                courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
+
+                if students_resp.status_code == 200 and courses_resp.status_code == 200:
+                    students = students_resp.json()
+                    courses = courses_resp.json()
+
+                    # Create dictionaries for easier lookup: {Name: ID}
+                    student_options = {s['name']: s['id'] for s in students}
+                    course_options = {c['name']: c['id'] for c in courses}
+
+                    with st.form("add_grade_form", clear_on_submit=True):
+                        selected_student_name = st.selectbox("Select Student", options=student_options.keys())
+                        selected_course_name = st.selectbox("Select Course", options=course_options.keys())
+                        grade_value = st.text_input("Enter Grade (e.g., A, B+, 85%)")
+                        submitted_grade = st.form_submit_button("Add Grade")
+
+                        if submitted_grade:
+                            if not selected_student_name or not selected_course_name or not grade_value:
+                                st.warning("Please select student, course, and enter a grade.")
+                            else:
+                                student_id = student_options[selected_student_name]
+                                course_id = course_options[selected_course_name]
+                                grade_data = {
+                                    "student_id": student_id,
+                                    "course_id": course_id,
+                                    "grade": grade_value
+                                }
+                                try:
+                                    response = requests.post(f"{BACKEND_URL}/grades", json=grade_data, headers=headers)
+                                    if response.status_code == 200:
+                                        st.success("Grade added successfully!")
+                                    else:
+                                        st.error(f"Failed to add grade: {response.text}")
+                                except Exception as e:
+                                    st.error(f"Error adding grade: {e}")
+                else:
+                    st.error("Could not load students or courses for grade entry.")
+            except Exception as e:
+                st.error(f"Error loading data for grade form: {e}")
+
+
+        st.divider() # Keep this divider
+
+    # (Inside elif page == "Course Management":, after the Add Grade expander)
+
+        # --- Section to Add a Schedule Entry ---
+        with st.expander("🗓️ Add Course Schedule Entry"):
+            # Fetch courses for dropdown
+            try:
+                courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
+                if courses_resp.status_code == 200:
+                    courses = courses_resp.json()
+                    course_options = {c['name']: c['id'] for c in courses} # {Name: ID}
+
+                    with st.form("add_schedule_form", clear_on_submit=True):
+                        selected_course_name = st.selectbox("Select Course for Schedule", options=course_options.keys(), key="sched_course")
+                        day = st.selectbox("Day of Week", options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], key="sched_day")
+                        start = st.text_input("Start Time (e.g., 10:00)")
+                        end = st.text_input("End Time (e.g., 11:30)")
+                        loc = st.text_input("Location (Optional)")
+                        submitted_schedule = st.form_submit_button("Add Schedule Entry")
+
+                        if submitted_schedule:
+                            if not selected_course_name or not day or not start or not end:
+                                st.warning("Please select course, day, start time, and end time.")
+                            else:
+                                course_id = course_options[selected_course_name]
+                                schedule_data = {
+                                    "course_id": course_id,
+                                    "day_of_week": day,
+                                    "start_time": start,
+                                    "end_time": end,
+                                    "location": loc if loc else None
+                                }
+                                try:
+                                    response = requests.post(f"{BACKEND_URL}/schedules", json=schedule_data, headers=headers)
+                                    if response.status_code == 200:
+                                        st.success("Schedule entry added successfully!")
+                                    else:
+                                        st.error(f"Failed to add schedule entry: {response.text}")
+                                except Exception as e:
+                                    st.error(f"Error adding schedule entry: {e}")
+                else:
+                    st.error("Could not load courses for schedule entry.")
+            except Exception as e:
+                st.error(f"Error loading data for schedule form: {e}")
+
+
+        st.divider() # Keep this divider
+    
         st.subheader("Existing Courses")
         try:
             response = requests.get(f"{BACKEND_URL}/courses", headers=headers)
@@ -391,10 +563,42 @@ else:
 
     elif page == "User Management":
         st.title("👥 User Management")
-        st.write("Here you can view and delete users.")
+        st.write("Here you can view, create and delete users.")
 
         token = f"Bearer {st.session_state.get('access_token')}"
         headers = {"Authorization": token}
+
+        with st.expander("➕ Create New User (Staff/Admin)"):
+            with st.form("create_user_form", clear_on_submit=True):
+                create_name = st.text_input("Full Name")
+                create_email = st.text_input("Email")
+                create_password = st.text_input("Password", type="password")
+                # Allow admin to choose role, default to staff
+                create_role = st.selectbox("Role", ["staff", "admin", "student"], index=0) 
+                submitted_create = st.form_submit_button("Create User")
+
+                if submitted_create:
+                    if not create_name or not create_email or not create_password:
+                        st.warning("Please fill out all fields.")
+                    else:
+                        new_user_data = {
+                            "name": create_name,
+                            "email": create_email,
+                            "password": create_password,
+                            "role": create_role
+                        }
+                        try:
+                            # Use the same /register endpoint
+                            response = requests.post(f"{BACKEND_URL}/register", json=new_user_data, headers=headers)
+                            if response.status_code == 200:
+                                st.success(f"User '{create_name}' created successfully!")
+                                st.rerun() # Rerun to refresh user list below
+                            elif response.status_code == 400:
+                                st.error(f"Creation failed: {response.json().get('detail', 'Unknown error')}")
+                            else:
+                                st.error(f"Creation failed: {response.text}")
+                        except Exception as e:
+                            st.error(f"Error creating user: {e}")
 
         try:
             # --- Fetch users from backend ---
@@ -444,3 +648,85 @@ else:
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
+    # (Inside the main 'else' block, add this after 'User Management')
+
+    elif page == "Analytics":
+        st.title("📈 Usage Analytics")
+
+        token = f"Bearer {st.session_state.get('access_token')}"
+        headers = {"Authorization": token}
+
+        try:
+            response = requests.get(f"{BACKEND_URL}/analytics/usage", headers=headers)
+
+            if response.status_code == 200:
+                analytics_data = response.json()
+                st.metric(label="Total Users", value=analytics_data.get("total_users", 0))
+                st.metric(label="Total Courses", value=analytics_data.get("total_courses", 0))
+                st.metric(label="Total Conversations", value=analytics_data.get("total_conversations", 0))
+            elif response.status_code == 403:
+                st.error("Access denied. Admin only.")
+            else:
+                st.error(f"Failed to fetch analytics data: {response.text}")
+
+        except Exception as e:
+            st.error(f"An error occurred fetching analytics: {e}")
+
+    # (Inside the main 'else' block, after the Schedules page block)
+
+    elif page == "Instructor Schedules":
+        st.title("👨‍🏫 Instructor Schedules")
+
+        token = f"Bearer {st.session_state.get('access_token')}"
+        headers = {"Authorization": token}
+
+        instructors = []
+        try:
+            # Fetch all courses to get unique instructor names
+            courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
+            if courses_resp.status_code == 200:
+                courses = courses_resp.json()
+                # Get a unique, sorted list of instructor names
+                instructors = sorted(list(set(c['instructor'] for c in courses))) 
+            else:
+                st.error("Could not fetch instructor list.")
+
+        except Exception as e:
+            st.error(f"Error fetching instructors: {e}")
+
+        if instructors:
+            selected_instructor = st.selectbox("Select an Instructor", options=instructors)
+
+            if selected_instructor:
+                try:
+                    # URL-encode the instructor name before sending
+                    encoded_instructor = urllib.parse.quote(selected_instructor)
+                    schedule_resp = requests.get(f"{BACKEND_URL}/schedules/instructor/{encoded_instructor}", headers=headers)
+
+                    if schedule_resp.status_code == 200:
+                        instructor_schedule = schedule_resp.json()
+                        if instructor_schedule:
+                            st.subheader(f"Teaching Schedule for {selected_instructor}")
+                            display_data = [{
+                                "Course Name": s['course_name'], 
+                                "Day": s['day_of_week'], 
+                                "Start Time": s['start_time'],
+                                "End Time": s['end_time'],
+                                "Location": s.get('location', 'N/A')
+                            } for s in instructor_schedule]
+                            st.dataframe(display_data, use_container_width=True)
+                        else:
+                            st.write(f"{selected_instructor} has no scheduled classes found.")
+                    else:
+                        st.error(f"Failed to fetch schedule for {selected_instructor}: {schedule_resp.text}")
+
+                except Exception as e:
+                    st.error(f"An error occurred fetching the schedule: {e}")
+        else:
+            st.write("No instructors found to display schedules for.")
+
+
+# (Keep the existing elif blocks for other pages)
+# ...
+
