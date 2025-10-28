@@ -119,7 +119,7 @@ if not st.session_state['logged_in']:
             reg_email = st.text_input("Email")
             reg_password = st.text_input("Choose Password", type="password")
             # Automatically set role to 'student' for self-registration
-            reg_role = "admin" 
+            reg_role = "student"  
             submitted_register = st.form_submit_button("Register")
 
             if submitted_register:
