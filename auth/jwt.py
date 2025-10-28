@@ -33,10 +33,7 @@ def verify_token(token: str, credentials_exception):
     except JWTError:
         raise credentials_exception
 
-# This is a dependency that your API routes will use
-# to get the currently logged-in user
-# REPLACE your old get_current_user function with this new one
-# REPLACE your old get_current_user function with this new one
+
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -44,22 +41,34 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     payload = verify_token(token, credentials_exception)
-    
-    email: str = payload.get("sub")
-    
-    # Get user details from the database using the email
-    conn = database.get_db_connection()
-    # ----> MODIFIED THIS QUERY to include 'name' <----
-    db_user = conn.execute('SELECT id, name, role, email FROM users WHERE email = ?', (email,)).fetchone() 
-    conn.close()
-    
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
 
-    # Return a complete user dictionary
-    # ----> MODIFIED THIS RETURN to include 'name' <----
-    # NEW CORRECTED RETURN STATEMENT
-    return {"id": db_user['id'], "name": db_user['name'], "role": db_user['role'], "email": db_user['email']}
+    email: str = payload.get("sub")
+
+    # Get user details from the database using the email
+    conn = None
+    cursor = None
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, name, role, email FROM users WHERE email = %s', (email,))
+        db_user = cursor.fetchone()
+
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Return a complete user dictionary (RealDictCursor makes it dict-like)
+        return db_user
+
+    except HTTPException:
+        raise
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        print(f"Database error fetching current user: {error}")
+        raise HTTPException(status_code=500, detail="Database error fetching user details.")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # REPLACE your old require_role function with this new one
 def require_role(required_roles: List[str]):
@@ -67,12 +76,14 @@ def require_role(required_roles: List[str]):
     A dependency that verifies the user is logged in and has one of
     the specified roles.
     """
-    def get_user_by_role(user: dict = Depends(get_current_user)):
+    def get_user_by_role(user: dict = Depends(get_current_user)): # User is now a dict from get_current_user
         user_role = user.get("role")
         if user_role not in required_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied: Requires one of {required_roles} role(s)"
             )
-        return user  # Just return the user dict we already have
+        # Add user_id directly to the dict for convenience elsewhere
+        user['user_id'] = user['id']
+        return user # Just return the user dict we already have
     return get_user_by_role
