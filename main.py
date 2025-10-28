@@ -29,9 +29,6 @@ def on_startup():
 # This configures the OpenAI library using the key from your .env file
 app.include_router(auth_router, tags=["Authentication"])
 openai.api_key = config('OPENAI_API_KEY')
-app = FastAPI()
-
-app.include_router(auth_router, tags=["Authentication"])
 
 
 @app.get("/")
