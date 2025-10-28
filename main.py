@@ -9,6 +9,7 @@ from typing import List
 from langdetect import detect, LangDetectException # <-- Add this import
 from collections import Counter # <-- Add this import at the top
 import urllib.parse
+from database import create_tables
 
 # --- Simulated FAQ Database ---
 FAQ_DATA = {
@@ -20,8 +21,13 @@ FAQ_DATA = {
 openai.api_key = config('OPENAI_API_KEY')
 
 app = FastAPI()
-
+@app.on_event("startup")
+def on_startup():
+    print("Running startup tasks...")
+    create_tables() # Call the function to ensure tables exist
+    print("Startup tasks complete.")
 # This configures the OpenAI library using the key from your .env file
+app.include_router(auth_router, tags=["Authentication"])
 openai.api_key = config('OPENAI_API_KEY')
 app = FastAPI()
 
