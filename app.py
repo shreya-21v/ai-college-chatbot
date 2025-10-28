@@ -3,7 +3,7 @@ import requests
 import urllib.parse
 
 # --- Configuration ---
-BACKEND_URL = "http://127.0.0.1:8000"  # Your FastAPI server URL
+BACKEND_URL = "https://ai-college-chatbot-backend.onrender.com"  # Your FastAPI server URL
 
 # --- Utility Functions ---
 
