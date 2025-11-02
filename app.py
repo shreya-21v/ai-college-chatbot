@@ -154,7 +154,7 @@ if not st.session_state['logged_in']:
     st.title("🎓 Hello, from your personanl college guide")
     
     # Placeholder for a college banner image
-    st.image("banner.png", use_column_width=True)
+    st.image("banner.png", use_container_width=True)
     st.write("") # Add some space
     
     # Use columns to center the forms in a narrower block
