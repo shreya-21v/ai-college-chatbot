@@ -151,7 +151,7 @@ if 'chat_history' not in st.session_state:
 # --- 1. LOGIN PAGE (MODIFIED) ---
 if not st.session_state['logged_in']:
     
-    st.title("🎓 Hello, from your personanl college guide")
+    st.title("🎓 Hello, from your personal college guide")
     
     # Placeholder for a college banner image
     st.image("banner.png", use_container_width=True)
