@@ -113,6 +113,22 @@ def create_tables():
             )
         ''')
 
+        # Create a 'system_config' table for settings like the prompt
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_config (
+                id SERIAL PRIMARY KEY,
+                key TEXT NOT NULL UNIQUE,
+                value TEXT NOT NULL
+            )
+        ''')
+
+            # This PostgreSQL command inserts a default prompt IF the key 'system_prompt' doesn't exist
+        cursor.execute('''
+            INSERT INTO system_config (key, value)
+            VALUES ('system_prompt', 'You are a helpful college chatbot.')
+            ON CONFLICT (key) DO NOTHING
+        ''')
+
         conn.commit()
         print("Database tables checked/created successfully.")
 
