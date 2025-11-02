@@ -216,7 +216,7 @@ else:
                 if grades:
                     st.subheader("Your Current Grades")
                     display_data = [{"Course Name": g['course_name'], "Grade": g['grade']} for g in grades]
-                    st.dataframe(display_data, width=0) # Use width=0 for container width
+                    st.dataframe(display_data, use_container_width=0) # Use width=0 for container width
                 else:
                     st.write("No grades found.")
             elif response.status_code == 403:
@@ -242,7 +242,7 @@ else:
                         "End Time": s['end_time'],
                         "Location": s.get('location', 'N/A')
                     } for s in schedules]
-                    st.dataframe(display_data, width=0)
+                    st.dataframe(display_data, use_container_width=0)
                 else:
                     st.write("No schedule information found.")
             else:
@@ -280,7 +280,7 @@ else:
                                 "End Time": s['end_time'],
                                 "Location": s.get('location', 'N/A')
                             } for s in instructor_schedule]
-                            st.dataframe(display_data, width=0)
+                            st.dataframe(display_data, use_container_width=0)
                         else:
                             st.write(f"{selected_instructor} has no scheduled classes found.")
                     else:
@@ -495,7 +495,7 @@ else:
                 students = response.json()
                 if students:
                     display_data = [{"id": s['id'], "name": s['name'], "email": s['email']} for s in students]
-                    st.dataframe(display_data, width=0) # Use width=0
+                    st.dataframe(display_data, user_container_width=0) # Use width=0
                 else:
                     st.write("No students found.")
             elif response.status_code == 403:
@@ -605,7 +605,7 @@ else:
                 student_usage = usage_response.json()
                 if student_usage:
                      display_data = [{"Name": s['name'], "Email": s['email'], "Messages Sent": s['message_count']} for s in student_usage]
-                     st.dataframe(display_data, width=0) # Use width=0
+                     st.dataframe(display_data, use_container_width=0) # Use width=0
                 else:
                     st.write("No student conversation data found.")
             elif usage_response.status_code == 403:
