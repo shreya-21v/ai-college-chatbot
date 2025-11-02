@@ -233,7 +233,7 @@ def handle_chat(
     user: dict = any_logged_in_user
 ):
     user_message = query.message
-    user_id = user['id'] # Use 'id' from the user dict
+    user_id = user['id'] 
 
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="AI service is not configured.")
@@ -241,7 +241,7 @@ def handle_chat(
     # --- Language Detection ---
     detected_language = "en"
     try:
-        detected_language = detect(user_message)
+        detected_language = detect(user_message) # <-- THIS IS THE FIX
     except LangDetectException:
         print("Language detection failed, defaulting to English.")
 
@@ -274,7 +274,6 @@ def handle_chat(
         if faq_context:
             system_prompt += f" {faq_context}"
         
-        # Format history for Gemini
         gemini_history = []
         for row in history_rows:
             gemini_history.append({"role": "user", "parts": [{"text": row['message']}]})
@@ -283,7 +282,7 @@ def handle_chat(
         # --- Real Google Gemini API Call ---
         try:
             model = genai.GenerativeModel(
-                model_name='gemini-2.5-flash-preview-09-2025', # Using a capable free-tier model
+                model_name='gemini-2.5-flash-preview-09-2025', 
                 system_instruction=system_prompt
             )
             chat = model.start_chat(history=gemini_history)
@@ -481,13 +480,7 @@ def add_course_schedule(
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
-
-# ===============================================
-#  REPORTS ENDPOINT
-# ===============================================
-
-# (Inside main.py, e.g., after the POST /schedules endpoint)
-
+        
 @app.post("/enrollments", tags=["Staff Features"])
 def enroll_student_in_course(
     enrollment_data: EnrollmentCreate,
@@ -498,7 +491,7 @@ def enroll_student_in_course(
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-
+        
         # Check for duplicate enrollment first
         cursor.execute(
             "SELECT id FROM enrollments WHERE student_id = %s AND course_id = %s",
@@ -514,7 +507,7 @@ def enroll_student_in_course(
             (enrollment_data.student_id, enrollment_data.course_id)
         )
         conn.commit()
-
+        
     except database.psycopg2.IntegrityError as e: # Catch foreign key errors
          if conn: conn.rollback()
          raise HTTPException(status_code=400, detail=f"Invalid student or course ID: {e}")
@@ -529,6 +522,10 @@ def enroll_student_in_course(
         if conn: conn.close()
 
     return {"message": "Student enrolled successfully."}
+
+# ===============================================
+#  REPORTS ENDPOINT
+# ===============================================
 
 @app.get("/reports/grade-distribution", tags=["Reports"])
 def get_grade_distribution_report(user: dict = require_staff_or_admin):
@@ -604,3 +601,4 @@ def get_conversations_per_student(user: dict = require_admin_only):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+
