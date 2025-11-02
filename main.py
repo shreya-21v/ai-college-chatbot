@@ -4,7 +4,7 @@ from decouple import config
 import database # Import the refactored database module
 from models.schemas import ( # Using parenthesis for multiple lines
     Course, UserDisplay, ChatQuery, Chat, CourseCreate, Grade, Schedule,
-    GradeCreate, ScheduleCreate, EnrollmentCreate
+    GradeCreate, ScheduleCreate, EnrollmentCreate, PromptUpdate
 )
 from auth.jwt import require_role, get_current_user # These are updated for psycopg2
 from typing import List
@@ -227,6 +227,10 @@ def delete_user(user_id: int, user: dict = require_admin_only):
 #  CHATBOT ENDPOINT (*** UPDATED FOR GEMINI ***)
 # ===============================================
 
+# ===============================================
+#  CHATBOT ENDPOINT (*** UPDATED FOR GEMINI & PROMPT CUSTOMIZATION ***)
+# ===============================================
+
 @app.post("/chat", response_model=Chat, tags=["Chatbot"])
 def handle_chat(
     query: ChatQuery,
@@ -241,7 +245,7 @@ def handle_chat(
     # --- Language Detection ---
     detected_language = "en"
     try:
-        detected_language = detect(user_message) # <-- THIS IS THE FIX
+        detected_language = detect(user_message)
     except LangDetectException:
         print("Language detection failed, defaulting to English.")
 
@@ -262,15 +266,23 @@ def handle_chat(
         conn = database.get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Fetch chat history from DB
+        # --- 1. Fetch System Prompt from DB (NEW) ---
+        cursor.execute("SELECT value FROM system_config WHERE key = 'system_prompt'")
+        prompt_row = cursor.fetchone()
+        if prompt_row:
+            system_prompt_base = prompt_row['value']
+        else:
+            system_prompt_base = "You are a helpful college chatbot." # Fallback
+
+        # --- 2. Fetch chat history from DB ---
         cursor.execute(
             'SELECT message, response FROM conversations WHERE user_id = %s ORDER BY timestamp ASC',
             (user_id,)
         )
         history_rows = cursor.fetchall()
         
-        # --- Build messages for Gemini ---
-        system_prompt = f"You are a helpful college chatbot. Please respond in {detected_language}."
+        # --- 3. Build messages for Gemini ---
+        system_prompt = f"{system_prompt_base} Please respond in {detected_language}." # Use DB prompt
         if faq_context:
             system_prompt += f" {faq_context}"
         
@@ -279,7 +291,7 @@ def handle_chat(
             gemini_history.append({"role": "user", "parts": [{"text": row['message']}]})
             gemini_history.append({"role": "model", "parts": [{"text": row['response']}]})
 
-        # --- Real Google Gemini API Call ---
+        # --- 4. Real Google Gemini API Call ---
         try:
             model = genai.GenerativeModel(
                 model_name='gemini-2.5-flash-preview-09-2025', 
@@ -294,7 +306,7 @@ def handle_chat(
             raise HTTPException(status_code=500, detail="Error connecting to AI service.")
         # --- End Real AI Call ---
 
-        # 3. Save conversation to database
+        # --- 5. Save conversation to database ---
         cursor.execute(
             'INSERT INTO conversations (user_id, message, response) VALUES (%s, %s, %s) RETURNING id',
             (user_id, user_message, bot_response)
@@ -304,7 +316,7 @@ def handle_chat(
         new_chat_id = new_chat_id_row['id']
         conn.commit()
 
-        # 4. Get the new conversation to return it
+        # --- 6. Get new conversation to return it ---
         cursor.execute('SELECT * FROM conversations WHERE id = %s', (new_chat_id,))
         new_chat = cursor.fetchone()
         if not new_chat: raise HTTPException(status_code=404, detail="Saved chat not found.")
@@ -602,3 +614,47 @@ def get_conversations_per_student(user: dict = require_admin_only):
         if cursor: cursor.close()
         if conn: conn.close()
 
+# (Inside main.py, in the ADMIN FEATURES ENDPOINTS section)
+
+@app.get("/admin/prompt", tags=["Admin Features"])
+def get_system_prompt(user: dict = require_admin_only):
+    """Gets the current system prompt. (Admin only)"""
+    conn = None; cursor = None
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM system_config WHERE key = 'system_prompt'")
+        prompt_row = cursor.fetchone()
+        if not prompt_row:
+            raise HTTPException(status_code=404, detail="System prompt not found.")
+        return {"prompt": prompt_row['value']}
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        print(f"DB Error fetching prompt: {error}")
+        raise HTTPException(status_code=500, detail="Database error fetching prompt.")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+@app.put("/admin/prompt", tags=["Admin Features"])
+def update_system_prompt(
+    prompt_data: PromptUpdate,
+    user: dict = require_admin_only
+):
+    """Updates the system prompt. (Admin only)"""
+    conn = None; cursor = None
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE system_config SET value = %s WHERE key = 'system_prompt'",
+            (prompt_data.prompt,)
+        )
+        conn.commit()
+        return {"message": "System prompt updated successfully."}
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        print(f"DB Error updating prompt: {error}")
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail="Database error updating prompt.")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()

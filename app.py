@@ -168,6 +168,7 @@ else:
     if user_role == "admin":
         available_pages.append("User Management")
         available_pages.append("Analytics")
+        available_pages.append("Admin Settings")
         
     # Page selection in the sidebar
     page = st.sidebar.radio("Navigate", available_pages)
@@ -224,6 +225,7 @@ else:
                  st.error(f"Failed to fetch grades: {response.text}")
         except Exception as e:
             st.error(f"An error occurred fetching grades: {e}")
+
 
     elif page == "Schedules":
         st.title("🗓️ Course Schedules")
@@ -408,6 +410,47 @@ else:
                 else: st.write("No courses found.")
             else: st.error(f"Failed to fetch courses: {response.text}")
         except Exception as e: st.error(f"An error occurred fetching courses: {e}")
+
+    # (Inside the main 'else' block, after the 'Analytics' block)
+
+    elif page == "Admin Settings":
+        st.title("⚙️ Admin Settings")
+
+        token = f"Bearer {st.session_state.get('access_token')}"
+        headers = {"Authorization": token}
+
+        st.subheader("Chatbot Prompt Customization")
+
+        try:
+            # Get the current prompt
+            response_get = requests.get(f"{BACKEND_URL}/admin/prompt", headers=headers)
+
+            if response_get.status_code == 200:
+                current_prompt = response_get.json().get("prompt", "You are a helpful college chatbot.")
+
+                with st.form("prompt_form"):
+                    st.write("Edit the base system prompt for the AI chatbot. This defines its core personality and instructions.")
+                    prompt_text = st.text_area("System Prompt", value=current_prompt, height=250)
+                    submitted_prompt = st.form_submit_button("Save Prompt")
+
+                    if submitted_prompt:
+                        update_data = {"prompt": prompt_text}
+                        try:
+                            response_put = requests.put(f"{BACKEND_URL}/admin/prompt", json=update_data, headers=headers)
+                            if response_put.status_code == 200:
+                                st.success("System prompt updated successfully!")
+                            else:
+                                st.error(f"Failed to update prompt: {response_put.text}")
+                        except Exception as e:
+                            st.error(f"Error updating prompt: {e}")
+            else:
+                st.error(f"Failed to load current prompt: {response_get.text}")
+
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+
+    # (Keep other elif blocks)
+    # ...
 
     elif page == "Student Data":
         st.title("🧑‍🎓 Student Data Access")
