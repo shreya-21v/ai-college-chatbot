@@ -1,18 +1,27 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from auth.router import router as auth_router
 from decouple import config
-import openai
 import database # Import the refactored database module
 from models.schemas import ( # Using parenthesis for multiple lines
     Course, UserDisplay, ChatQuery, Chat, CourseCreate, Grade, Schedule,
-    GradeCreate, ScheduleCreate # Added GradeCreate, ScheduleCreate
+    GradeCreate, ScheduleCreate
 )
-from auth.jwt import require_role, get_current_user # These should also be updated for psycopg2
+from auth.jwt import require_role, get_current_user # These are updated for psycopg2
 from typing import List
 from langdetect import detect, LangDetectException
 from collections import Counter
 import urllib.parse
 from database import create_tables
+
+# --- NEW: Google Gemini API Setup ---
+import google.generativeai as genai
+GOOGLE_API_KEY = config('GOOGLE_API_KEY', default=None)
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+else:
+    print("Warning: GOOGLE_API_KEY not found. Chatbot AI will not function.")
+# --- End Gemini Setup ---
+
 
 # --- Simulated FAQ Database ---
 FAQ_DATA = {
@@ -22,20 +31,12 @@ FAQ_DATA = {
 }
 # --- End FAQ Database ---
 
-# Configure OpenAI (using v0.x syntax based on previous steps)
-openai.api_key = config('OPENAI_API_KEY', default=None) # Add default to avoid error if missing
-if not openai.api_key:
-    print("Warning: OPENAI_API_KEY not found in environment. Chatbot features needing AI will fail.")
-
 app = FastAPI()
 
 # --- Database Initialization on Startup ---
 @app.on_event("startup")
 def on_startup():
     print("Running startup tasks...")
-    # Check if we are using PostgreSQL connection before creating tables
-    # This avoids trying to run it if DATABASE_URL isn't set and we fell back to SQLite (if that fallback exists)
-    # Or simply always try to create - the function handles 'IF NOT EXISTS'
     try:
          create_tables() # Call the function from database.py
          print("Startup tasks complete.")
@@ -51,7 +52,6 @@ def read_root():
     return {"Hello": "Backend"}
 
 # --- Dependencies ---
-# These now rely on the updated get_current_user and require_role in auth/jwt.py
 any_logged_in_user = Depends(get_current_user)
 require_staff_or_admin = Depends(require_role(required_roles=["staff", "admin"]))
 require_admin_only = Depends(require_role(required_roles=["admin"]))
@@ -130,7 +130,6 @@ def update_course(
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # Check if course exists first
         cursor.execute('SELECT id FROM courses WHERE id = %s', (course_id,))
         db_course = cursor.fetchone()
         if not db_course:
@@ -141,8 +140,6 @@ def update_course(
             (course.name, course.description, course.instructor, course_id)
         )
         conn.commit()
-        # Fetch the updated course to return potentially? Or just return input data.
-        # Let's return input data for now.
         return {"message": "Course updated successfully", "course": course.model_dump()}
     except HTTPException:
          raise
@@ -160,7 +157,6 @@ def delete_course(course_id: int, user: dict = require_staff_or_admin):
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # Check if course exists first
         cursor.execute('SELECT id FROM courses WHERE id = %s', (course_id,))
         db_course = cursor.fetchone()
         if not db_course:
@@ -201,7 +197,6 @@ def get_all_users(user: dict = require_admin_only):
 
 @app.get("/users/me", response_model=UserDisplay, tags=["User Management"])
 def get_current_logged_in_user(user: dict = any_logged_in_user):
-    # The dependency already fetches the user dict including necessary fields
     return user
 
 @app.delete("/users/{user_id}", tags=["User Management"])
@@ -210,7 +205,6 @@ def delete_user(user_id: int, user: dict = require_admin_only):
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # Check if user exists
         cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
         db_user = cursor.fetchone()
         if not db_user:
@@ -230,7 +224,7 @@ def delete_user(user_id: int, user: dict = require_admin_only):
         if conn: conn.close()
 
 # ===============================================
-#  CHATBOT ENDPOINT
+#  CHATBOT ENDPOINT (*** UPDATED FOR GEMINI ***)
 # ===============================================
 
 @app.post("/chat", response_model=Chat, tags=["Chatbot"])
@@ -241,19 +235,24 @@ def handle_chat(
     user_message = query.message
     user_id = user['id'] # Use 'id' from the user dict
 
+    if not GOOGLE_API_KEY:
+        raise HTTPException(status_code=500, detail="AI service is not configured.")
+
     # --- Language Detection ---
-    detected_language = "en"; lang_note = ""
+    detected_language = "en"
     try:
         detected_language = detect(user_message)
-        lang_note = f"(Detected Language: {detected_language})"
     except LangDetectException:
         print("Language detection failed, defaulting to English.")
-        lang_note = "(Language: en - default)"
 
     # --- FAQ Logic ---
     faq_context = ""
     user_msg_lower = user_message.lower()
-    faq_keywords = { "..." } # Keep your keywords here
+    faq_keywords = {
+        "library hours": ["library", "hours", "open", "close"],
+        "admission deadline": ["admission", "deadline", "apply", "application"],
+        "gym access": ["gym", "fitness", "sports", "access"]
+    }
     for faq_key, keywords in faq_keywords.items():
         if any(word in user_msg_lower for word in keywords):
             faq_context = f"Relevant Information: {FAQ_DATA[faq_key]}"; break
@@ -269,28 +268,32 @@ def handle_chat(
             (user_id,)
         )
         history_rows = cursor.fetchall()
-        past_message_count = len(history_rows)
-
-        # --- Build messages for OpenAI ---
-        system_prompt = f"You are a helpful college chatbot. Please respond in {detected_language}.";
-        if faq_context: system_prompt += f" {faq_context}"
-        messages = [{"role": "system", "content": system_prompt}]
+        
+        # --- Build messages for Gemini ---
+        system_prompt = f"You are a helpful college chatbot. Please respond in {detected_language}."
+        if faq_context:
+            system_prompt += f" {faq_context}"
+        
+        # Format history for Gemini
+        gemini_history = []
         for row in history_rows:
-            messages.append({"role": "user", "content": row['message']})
-            messages.append({"role": "assistant", "content": row['response']})
-        messages.append({"role": "user", "content": user_message})
+            gemini_history.append({"role": "user", "parts": [{"text": row['message']}]})
+            gemini_history.append({"role": "model", "parts": [{"text": row['response']}]})
 
-        # --- Mock Response ---
-        if faq_context: bot_response = f"{lang_note} (Using FAQ Context) Mock: '{user_message}'";
-        else: bot_response = f"{lang_note} History: {past_message_count}. Mock: '{user_message}'";
-
-        # --- Real OpenAI call (commented out) ---
-        # try:
-        #     if openai.api_key: # Check if key exists
-        #         completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
-        #         bot_response = completion.choices[0].message.content
-        #     else: raise ValueError("OpenAI API Key not configured.")
-        # except Exception as e: print(f"OpenAI API error: {e}"); raise HTTPException(status_code=500, detail="Error connecting to AI service.")
+        # --- Real Google Gemini API Call ---
+        try:
+            model = genai.GenerativeModel(
+                model_name='gemini-2.5-flash-preview-09-2025', # Using a capable free-tier model
+                system_instruction=system_prompt
+            )
+            chat = model.start_chat(history=gemini_history)
+            response = chat.send_message(user_message)
+            bot_response = response.text
+            
+        except Exception as e:
+            print(f"Google Gemini API error: {e}")
+            raise HTTPException(status_code=500, detail="Error connecting to AI service.")
+        # --- End Real AI Call ---
 
         # 3. Save conversation to database
         cursor.execute(
@@ -433,14 +436,13 @@ def add_student_grade(
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # Consider adding existence checks for student_id and course_id
         cursor.execute(
             "INSERT INTO grades (student_id, course_id, grade) VALUES (%s, %s, %s)",
             (grade_data.student_id, grade_data.course_id, grade_data.grade)
         )
         conn.commit()
         return {"message": "Grade added successfully"}
-    except database.psycopg2.IntegrityError as e: # Catch potential foreign key errors specifically
+    except database.psycopg2.IntegrityError as e:
         if conn: conn.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid student or course ID: {e}")
     except (Exception, database.psycopg2.DatabaseError) as error:
@@ -460,7 +462,6 @@ def add_course_schedule(
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # Consider adding existence check for course_id
         cursor.execute(
             """INSERT INTO schedules
                (course_id, day_of_week, start_time, end_time, location)
@@ -491,25 +492,16 @@ def get_grade_distribution_report(user: dict = require_staff_or_admin):
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-
-        # Fetch all courses
         cursor.execute("SELECT id, name FROM courses")
         courses = cursor.fetchall()
-
         report_data = {}
-
         for course in courses:
             course_id = course['id']
             course_name = course['name']
-
-            # Fetch grades for this specific course using a separate cursor execution
             cursor.execute("SELECT grade FROM grades WHERE course_id = %s", (course_id,))
             grades = cursor.fetchall()
-
-            # Count the occurrences of each grade
             grade_counts = Counter(row['grade'] for row in grades)
             report_data[course_name] = dict(grade_counts)
-
         return report_data
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error generating grade report: {error}")
@@ -528,14 +520,12 @@ def get_usage_analytics(user: dict = require_admin_only):
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-
         cursor.execute("SELECT COUNT(*) FROM users")
-        total_users = cursor.fetchone()['count'] # fetchone returns dict, access by key
+        total_users = cursor.fetchone()['count']
         cursor.execute("SELECT COUNT(*) FROM courses")
         total_courses = cursor.fetchone()['count']
         cursor.execute("SELECT COUNT(*) FROM conversations")
         total_conversations = cursor.fetchone()['count']
-
         return {
             "total_users": total_users,
             "total_courses": total_courses,
@@ -559,11 +549,11 @@ def get_conversations_per_student(user: dict = require_admin_only):
             SELECT u.name, u.email, COUNT(c.id) as message_count
             FROM users u LEFT JOIN conversations c ON u.id = c.user_id
             WHERE u.role = 'student'
-            GROUP BY u.id, u.name, u.email /* Added name, email to GROUP BY for consistency */
+            GROUP BY u.id, u.name, u.email
             ORDER BY message_count DESC
         ''')
         usage_data = cursor.fetchall()
-        return usage_data # Returns list of dicts directly
+        return usage_data
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error fetching conversation analytics: {error}")
         raise HTTPException(status_code=500, detail="Database error fetching conversation analytics.")
