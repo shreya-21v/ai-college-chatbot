@@ -48,12 +48,12 @@ class GradeCreate(BaseModel):
     grade: str
 
 class Grade(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     student_id: int
     course_id: int
     grade: str
     course_name: str # From the JOIN query
-    model_config = ConfigDict(from_attributes=True)
 
 # --- Schedule Models ---
 class ScheduleCreate(BaseModel):
@@ -64,6 +64,7 @@ class ScheduleCreate(BaseModel):
     location: Optional[str] = None
 
 class Schedule(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     course_id: int
     day_of_week: str
@@ -71,12 +72,17 @@ class Schedule(BaseModel):
     end_time: str
     location: Optional[str] = None
     course_name: str # From the JOIN query
-    model_config = ConfigDict(from_attributes=True)
 
-# --- Enrollment Models (THE MISSING CLASS) ---
+# --- Enrollment Models ---
 class EnrollmentCreate(BaseModel):
     student_id: int
     course_id: int
+
+# --- Admin Models (THE MISSING CLASS) ---
+class PromptUpdate(BaseModel):
+    prompt: str
+
+
 
 
 
