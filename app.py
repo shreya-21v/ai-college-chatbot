@@ -3,9 +3,61 @@ import requests
 import urllib.parse # For instructor schedules
 
 # --- Configuration ---
-BACKEND_URL = "https://ai-college-chatbot-backend.onrender.com"  # Your public Render backend URL
+# Make sure this is your public Render URL
+BACKEND_URL = "https://ai-college-chatbot-backend.onrender.com" 
 
-# --- Utility Functions ---
+# --- NEW STYLING (Inject custom CSS) ---
+st.markdown("""
+<style>
+/* Center the main content block for the login page */
+div[data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > [data-testid="stVerticalBlock"]:first-child {
+    max-width: 550px; /* Set a max width for the forms */
+    margin: 0 auto;   /* Center the block */
+}
+
+/* Style the form containers as cards */
+div[data-testid="stForm"] {
+    border: 1px solid #e6e6e6;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    background-color: #ffffff;
+    margin-bottom: 2rem; /* Add space between forms */
+}
+
+/* Style the form buttons */
+div[data-testid="stForm"] .stButton > button {
+    width: 100%;
+    border: none;
+    border-radius: 5px;
+    padding: 10px 0;
+    font-weight: bold;
+    color: white;
+    background-color: #1c88e5; /* A fresh blue */
+    transition: background-color 0.3s ease;
+}
+
+div[data-testid="stForm"] .stButton > button:hover {
+    background-color: #005eb8;
+}
+
+/* Center the title and add a nice font */
+h1 {
+    text-align: center;
+    font-family: 'Arial', sans-serif;
+    color: #333;
+}
+h2 {
+    text-align: center;
+    font-family: 'Arial', sans-serif;
+    color: #555;
+}
+</style>
+""", unsafe_allow_html=True)
+# --- END STYLING ---
+
+
+# --- Utility Functions (No changes here) ---
 
 def login_user(username, password):
     """Attempts to log in the user via the FastAPI backend."""
@@ -20,9 +72,8 @@ def login_user(username, password):
             st.session_state['logged_in'] = True
             
             token = f"Bearer {data['access_token']}"
-            headers = {"Authorization": token} # Use these headers for next calls
+            headers = {"Authorization": token} 
 
-            # --- Get user details ---
             user_details_response = requests.get(
                 f"{BACKEND_URL}/users/me", 
                 headers=headers 
@@ -30,13 +81,12 @@ def login_user(username, password):
             if user_details_response.status_code == 200:
                 user_details = user_details_response.json()
                 st.session_state['user_role'] = user_details.get('role')
-                st.session_state['user_name'] = user_details.get('name', 'user') # Store name
+                st.session_state['user_name'] = user_details.get('name', 'user') 
             else:
                 print(f"Error fetching user details: {user_details_response.status_code}")
                 st.session_state['user_role'] = 'user' 
                 st.session_state['user_name'] = 'user'
             
-            # --- Fetch chat history ---
             history_response = requests.get(
                 f"{BACKEND_URL}/chat/history",
                 headers=headers 
@@ -46,7 +96,7 @@ def login_user(username, password):
                 st.session_state['chat_history'] = [{"user": row['message'], "bot": row['response']} for row in history_data]
             else:
                 print(f"Error fetching chat history: {history_response.status_code}")
-                st.session_state['chat_history'] = [] # Start fresh if history fails
+                st.session_state['chat_history'] = []
 
             st.rerun() 
         else:
@@ -90,7 +140,7 @@ def get_chat_response(message):
 
 # --- Main App Logic ---
 
-st.set_page_config(page_title="College AI Chatbot", layout="wide")
+st.set_page_config(page_title="College AI Chatbot", layout="wide") # Use wide layout
 
 # Initialize session state if it doesn't exist
 if 'logged_in' not in st.session_state:
@@ -98,13 +148,20 @@ if 'logged_in' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
-# --- 1. LOGIN PAGE ---
+# --- 1. LOGIN PAGE (MODIFIED) ---
 if not st.session_state['logged_in']:
-    st.title("Welcome to the AI College Chatbot")
     
-    col1, col2 = st.columns(2) # Create two columns for layout
-
-    with col1: # Login form in the left column
+    st.title("🎓 Welcome to the AI College Chatbot")
+    
+    # Placeholder for a college banner image
+    st.image("https://placehold.co/800x200/1c88e5/ffffff?text=Your+College+Banner&font=arial", use_column_width=True)
+    st.write("") # Add some space
+    
+    # Use columns to center the forms in a narrower block
+    col1, col_main, col3 = st.columns([1, 1.5, 1]) # 1:1.5:1 ratio centers the middle column
+    
+    with col_main:
+        # Login Form Card
         st.subheader("Please log in")
         with st.form("login_form"):
             username = st.text_input("Email (Username)")
@@ -114,14 +171,13 @@ if not st.session_state['logged_in']:
             if submitted_login:
                 login_user(username, password)
 
-    with col2: # Registration form in the right column
+        # Registration Form Card
         st.subheader("New Student? Register Here")
         with st.form("register_form", clear_on_submit=True):
             reg_name = st.text_input("Full Name")
             reg_email = st.text_input("Email")
             reg_password = st.text_input("Choose Password", type="password")
-            # Automatically set role to 'student' for self-registration
-            reg_role = "student" 
+            reg_role = "student" # Default registration role
             submitted_register = st.form_submit_button("Register")
 
             if submitted_register:
@@ -136,9 +192,9 @@ if not st.session_state['logged_in']:
                     }
                     try:
                         response = requests.post(f"{BACKEND_URL}/register", json=user_data)
-                        if response.status_code == 200: # FastAPI register returns 200
+                        if response.status_code == 200: 
                             st.success("Registration successful! Please log in.")
-                        elif response.status_code == 400: # Bad request (e.g., email exists)
+                        elif response.status_code == 400: 
                             st.error(f"Registration failed: {response.json().get('detail', 'Unknown error')}")
                         else:
                             st.error(f"Registration failed with code {response.status_code}: {response.text}")
@@ -147,14 +203,14 @@ if not st.session_state['logged_in']:
 
 # --- 2. MAIN APP INTERFACE (Role-Based) ---
 else:
-    user_role = st.session_state.get('user_role', 'user') # Get the role
-    user_name = st.session_state.get('user_name', 'user') # Get the name
+    # This section remains unchanged
+    user_role = st.session_state.get('user_role', 'user') 
+    user_name = st.session_state.get('user_name', 'user') 
 
     # --- Sidebar Navigation ---
     st.sidebar.title(f"Welcome, {user_name}!")
     st.sidebar.caption(f"Role: {user_role}")
     
-    # Define available pages based on role
     available_pages = ["Chatbot"]
     if user_role == "student":
         available_pages.append("Grades") 
@@ -170,10 +226,9 @@ else:
         available_pages.append("Analytics")
         available_pages.append("Admin Settings")
         
-    # Page selection in the sidebar
     page = st.sidebar.radio("Navigate", available_pages)
     
-    st.sidebar.divider() # Adds a visual separator
+    st.sidebar.divider() 
     st.sidebar.button("Logout", on_click=logout_user)
 
     # --- Main Content Area (Conditional Rendering) ---
@@ -184,27 +239,21 @@ else:
     if page == "Chatbot":
         st.title("College AI Chatbot 🤖")
         
-        # Display existing chat messages
         for chat in st.session_state.chat_history:
             with st.chat_message("user"):
                 st.markdown(chat['user'])
             with st.chat_message("assistant"):
                 st.markdown(chat['bot'])
 
-        # Chat input at the bottom
         if prompt := st.chat_input("What would you like to know?"):
-            # Add user message to history and display it
             st.session_state.chat_history.append({"user": prompt, "bot": "..."})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # Get bot response
             bot_response = get_chat_response(prompt)
             
             if bot_response:
-                # Update the last bot message in history
                 st.session_state.chat_history[-1]['bot'] = bot_response
-                # Rerun to display the new message
                 st.rerun()
 
     elif page == "Grades":
@@ -216,7 +265,7 @@ else:
                 if grades:
                     st.subheader("Your Current Grades")
                     display_data = [{"Course Name": g['course_name'], "Grade": g['grade']} for g in grades]
-                    st.dataframe(display_data, use_container_width=0) # Use width=0 for container width
+                    st.dataframe(display_data, use_container_width=True) # Corrected
                 else:
                     st.write("No grades found.")
             elif response.status_code == 403:
@@ -225,7 +274,6 @@ else:
                  st.error(f"Failed to fetch grades: {response.text}")
         except Exception as e:
             st.error(f"An error occurred fetching grades: {e}")
-
 
     elif page == "Schedules":
         st.title("🗓️ Course Schedules")
@@ -242,7 +290,7 @@ else:
                         "End Time": s['end_time'],
                         "Location": s.get('location', 'N/A')
                     } for s in schedules]
-                    st.dataframe(display_data, use_container_width=0)
+                    st.dataframe(display_data, use_container_width=True) # Corrected
                 else:
                     st.write("No schedule information found.")
             else:
@@ -280,7 +328,7 @@ else:
                                 "End Time": s['end_time'],
                                 "Location": s.get('location', 'N/A')
                             } for s in instructor_schedule]
-                            st.dataframe(display_data, use_container_width=0)
+                            st.dataframe(display_data, use_container_width=True) # Corrected
                         else:
                             st.write(f"{selected_instructor} has no scheduled classes found.")
                     else:
@@ -307,8 +355,7 @@ else:
                         new_course_data = {"name": new_name, "description": new_desc, "instructor": new_instructor}
                         try:
                             response = requests.post(f"{BACKEND_URL}/courses", json=new_course_data, headers=headers)
-                            if response.status_code == 200:
-                                st.success("Course added successfully!"); st.rerun()
+                            if response.status_code == 200: st.success("Course added successfully!"); st.rerun()
                             else: st.error(f"Failed to add course: {response.text}")
                         except Exception as e: st.error(f"Error adding course: {e}")
 
@@ -411,47 +458,6 @@ else:
             else: st.error(f"Failed to fetch courses: {response.text}")
         except Exception as e: st.error(f"An error occurred fetching courses: {e}")
 
-    # (Inside the main 'else' block, after the 'Analytics' block)
-
-    elif page == "Admin Settings":
-        st.title("⚙️ Admin Settings")
-
-        token = f"Bearer {st.session_state.get('access_token')}"
-        headers = {"Authorization": token}
-
-        st.subheader("Chatbot Prompt Customization")
-
-        try:
-            # Get the current prompt
-            response_get = requests.get(f"{BACKEND_URL}/admin/prompt", headers=headers)
-
-            if response_get.status_code == 200:
-                current_prompt = response_get.json().get("prompt", "You are a helpful college chatbot.")
-
-                with st.form("prompt_form"):
-                    st.write("Edit the base system prompt for the AI chatbot. This defines its core personality and instructions.")
-                    prompt_text = st.text_area("System Prompt", value=current_prompt, height=250)
-                    submitted_prompt = st.form_submit_button("Save Prompt")
-
-                    if submitted_prompt:
-                        update_data = {"prompt": prompt_text}
-                        try:
-                            response_put = requests.put(f"{BACKEND_URL}/admin/prompt", json=update_data, headers=headers)
-                            if response_put.status_code == 200:
-                                st.success("System prompt updated successfully!")
-                            else:
-                                st.error(f"Failed to update prompt: {response_put.text}")
-                        except Exception as e:
-                            st.error(f"Error updating prompt: {e}")
-            else:
-                st.error(f"Failed to load current prompt: {response_get.text}")
-
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-
-    # (Keep other elif blocks)
-    # ...
-
     elif page == "Student Data":
         st.title("🧑‍🎓 Student Data Access")
         
@@ -459,10 +465,8 @@ else:
             try:
                 students_resp = requests.get(f"{BACKEND_URL}/students", headers=headers)
                 courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
-
                 if students_resp.status_code == 200 and courses_resp.status_code == 200:
-                    students = students_resp.json()
-                    courses = courses_resp.json()
+                    students = students_resp.json(); courses = courses_resp.json()
                     student_options = {s['name']: s['id'] for s in students}
                     course_options = {c['name']: c['id'] for c in courses}
                     with st.form("enroll_student_form", clear_on_submit=True):
@@ -481,13 +485,10 @@ else:
                                     if response.status_code == 200: st.success("Student enrolled successfully!")
                                     else: st.error(f"Failed to enroll student: {response.text}")
                                 except Exception as e: st.error(f"Error enrolling student: {e}")
-                else:
-                     st.error("Could not load students or courses for enrollment form.")
-            except Exception as e:
-                 st.error(f"Error loading data for enrollment form: {e}")
+                else: st.error("Could not load students or courses for enrollment form.")
+            except Exception as e: st.error(f"Error loading data for enrollment form: {e}")
         
         st.divider() 
-
         st.subheader("List of Students")
         try:
             response = requests.get(f"{BACKEND_URL}/students", headers=headers)
@@ -495,7 +496,7 @@ else:
                 students = response.json()
                 if students:
                     display_data = [{"id": s['id'], "name": s['name'], "email": s['email']} for s in students]
-                    st.dataframe(display_data, user_container_width=0) # Use width=0
+                    st.dataframe(display_data, use_container_width=True) # Corrected
                 else:
                     st.write("No students found.")
             elif response.status_code == 403:
@@ -524,13 +525,11 @@ else:
                         try:
                             response = requests.post(f"{BACKEND_URL}/register", json=new_user_data, headers=headers)
                             if response.status_code == 200:
-                                st.success(f"User '{create_name}' created successfully!")
-                                st.rerun()
+                                st.success(f"User '{create_name}' created successfully!"); st.rerun()
                             else: st.error(f"Creation failed: {response.json().get('detail', 'Unknown error')}")
                         except Exception as e: st.error(f"Error creating user: {e}")
         
         st.divider() 
-        
         st.subheader("Current Users")
         try:
             response = requests.get(f"{BACKEND_URL}/users", headers=headers)
@@ -605,7 +604,7 @@ else:
                 student_usage = usage_response.json()
                 if student_usage:
                      display_data = [{"Name": s['name'], "Email": s['email'], "Messages Sent": s['message_count']} for s in student_usage]
-                     st.dataframe(display_data, use_container_width=0) # Use width=0
+                     st.dataframe(display_data, use_container_width=True) # Corrected
                 else:
                     st.write("No student conversation data found.")
             elif usage_response.status_code == 403:
@@ -614,5 +613,43 @@ else:
                  st.error(f"Failed to fetch usage data: {usage_response.text}")
         except Exception as e:
             st.error(f"An error occurred fetching usage analytics: {e}")
+
+    elif page == "Admin Settings":
+        st.title("⚙️ Admin Settings")
+        
+        token = f"Bearer {st.session_state.get('access_token')}"
+        headers = {"Authorization": token}
+
+        st.subheader("Chatbot Prompt Customization")
+
+        try:
+            # Get the current prompt
+            response_get = requests.get(f"{BACKEND_URL}/admin/prompt", headers=headers)
+            
+            if response_get.status_code == 200:
+                current_prompt = response_get.json().get("prompt", "You are a helpful college chatbot.")
+                
+                with st.form("prompt_form"):
+                    st.write("Edit the base system prompt for the AI chatbot. This defines its core personality and instructions.")
+                    prompt_text = st.text_area("System Prompt", value=current_prompt, height=250)
+                    submitted_prompt = st.form_submit_button("Save Prompt")
+                    
+                    if submitted_prompt:
+                        update_data = {"prompt": prompt_text}
+                        try:
+                            response_put = requests.put(f"{BACKEND_URL}/admin/prompt", json=update_data, headers=headers)
+                            if response_put.status_code == 200:
+                                st.success("System prompt updated successfully!")
+                            else:
+                                st.error(f"Failed to update prompt: {response_put.text}")
+                        except Exception as e:
+                            st.error(f"Error updating prompt: {e}")
+            else:
+                st.error(f"Failed to load current prompt: {response_get.text}")
+                
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+
+
 
 
