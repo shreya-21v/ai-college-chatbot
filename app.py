@@ -140,7 +140,7 @@ def get_chat_response(message):
 
 # --- Main App Logic ---
 
-st.set_page_config(page_title="College AI Chatbot", layout="wide") # Use wide layout
+st.set_page_config(page_title="Brindavan Group of Institutions", layout="wide") # Use wide layout
 
 # Initialize session state if it doesn't exist
 if 'logged_in' not in st.session_state:
@@ -151,10 +151,10 @@ if 'chat_history' not in st.session_state:
 # --- 1. LOGIN PAGE (MODIFIED) ---
 if not st.session_state['logged_in']:
     
-    st.title("🎓 Welcome to the AI College Chatbot")
+    st.title("🎓 Hello, from your personanl college guide")
     
     # Placeholder for a college banner image
-    st.image("https://placehold.co/800x200/1c88e5/ffffff?text=Your+College+Banner&font=arial", use_column_width=True)
+    st.image("banner.png", use_column_width=True)
     st.write("") # Add some space
     
     # Use columns to center the forms in a narrower block
