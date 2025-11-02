@@ -4,7 +4,7 @@ from decouple import config
 import database # Import the refactored database module
 from models.schemas import ( # Using parenthesis for multiple lines
     Course, UserDisplay, ChatQuery, Chat, CourseCreate, Grade, Schedule,
-    GradeCreate, ScheduleCreate
+    GradeCreate, ScheduleCreate, EnrollmentCreate
 )
 from auth.jwt import require_role, get_current_user # These are updated for psycopg2
 from typing import List
@@ -485,6 +485,50 @@ def add_course_schedule(
 # ===============================================
 #  REPORTS ENDPOINT
 # ===============================================
+
+# (Inside main.py, e.g., after the POST /schedules endpoint)
+
+@app.post("/enrollments", tags=["Staff Features"])
+def enroll_student_in_course(
+    enrollment_data: EnrollmentCreate,
+    user: dict = require_staff_or_admin # Staff/Admin only
+):
+    """Enrolls a student in a course."""
+    conn = None; cursor = None
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+
+        # Check for duplicate enrollment first
+        cursor.execute(
+            "SELECT id FROM enrollments WHERE student_id = %s AND course_id = %s",
+            (enrollment_data.student_id, enrollment_data.course_id)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="Student is already enrolled in this course.")
+
+        # Create new enrollment
+        cursor.execute(
+            "INSERT INTO enrollments (student_id, course_id) VALUES (%s, %s)",
+            (enrollment_data.student_id, enrollment_data.course_id)
+        )
+        conn.commit()
+
+    except database.psycopg2.IntegrityError as e: # Catch foreign key errors
+         if conn: conn.rollback()
+         raise HTTPException(status_code=400, detail=f"Invalid student or course ID: {e}")
+    except HTTPException: # Re-raise 400 error
+         raise
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        if conn: conn.rollback()
+        print(f"DB Error enrolling student: {error}")
+        raise HTTPException(status_code=500, detail="Database error enrolling student.")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+    return {"message": "Student enrolled successfully."}
 
 @app.get("/reports/grade-distribution", tags=["Reports"])
 def get_grade_distribution_report(user: dict = require_staff_or_admin):
