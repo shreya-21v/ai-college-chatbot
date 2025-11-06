@@ -41,22 +41,26 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     payload = verify_token(token, credentials_exception)
-
+    
     email: str = payload.get("sub")
-
-    # Get user details from the database using the email
+    
     conn = None
     cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, role, email FROM users WHERE email = %s', (email,))
+        
+        # --- MODIFIED SQL QUERY ---
+        # Fetch 'year_of_study' along with other details
+        cursor.execute('SELECT id, name, role, email, year_of_study FROM users WHERE email = %s', (email,))
         db_user = cursor.fetchone()
 
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Return a complete user dictionary (RealDictCursor makes it dict-like)
+        # RealDictCursor returns a dict-like object.
+        # It's better to return the whole dict.
+        # Pydantic will validate it in the endpoint.
         return db_user
 
     except HTTPException:
