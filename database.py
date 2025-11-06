@@ -91,6 +91,23 @@ def create_tables():
             )
         ''')
 
+        cursor.execute('''
+            DROP TABLE IF EXISTS grades CASCADE;
+        ''')
+
+        # --- Create the new 'internal_marks' table ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS internal_marks (
+                id SERIAL PRIMARY KEY,
+                student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                internal_1 INTEGER DEFAULT 0 CHECK (internal_1 >= 0 AND internal_1 <= 25),
+                internal_2 INTEGER DEFAULT 0 CHECK (internal_2 >= 0 AND internal_2 <= 25),
+                internal_3 INTEGER DEFAULT 0 CHECK (internal_3 >= 0 AND internal_3 <= 25),
+                UNIQUE(student_id, course_id) -- A student has only one set of marks per course
+            )
+        ''')
+
         # Schedules Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS schedules (

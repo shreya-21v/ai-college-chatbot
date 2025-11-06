@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, conint, computed_field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional 
 
 # --- User Models ---
 class User(BaseModel):
@@ -41,19 +41,38 @@ class Course(CourseBase):
     id: int
     model_config = ConfigDict(from_attributes=True) 
 
-# --- Grade Models ---
-class GradeCreate(BaseModel):
-    student_id: int
-    course_id: int
-    grade: str
+class InternalMarkBase(BaseModel):
+    # Pydantic validation: allows integers between 0 and 25
+    internal_1: conint(ge=0, le=25) = 0
+    internal_2: conint(ge=0, le=25) = 0
+    internal_3: conint(ge=0, le=25) = 0
 
-class Grade(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
+class InternalMarkCreate(InternalMarkBase):
     student_id: int
     course_id: int
-    grade: str
-    course_name: str # From the JOIN query
+
+class InternalMarkDisplay(InternalMarkBase):
+    model_config = ConfigDict(from_attributes=True) # For reading from DB
+    
+    course_name: str
+    student_name: str
+    
+    # This automatically calculates the total from the other 3 fields
+    @computed_field
+    @property
+    def total_marks(self) -> int:
+        return self.internal_1 + self.internal_2 + self.internal_3
+
+    # This automatically calculates the status based on your 35% rule
+    @computed_field
+    @property
+    def status(self) -> str:
+        # 35% of 75 = 26.25
+        pass_mark = 26.25 
+        if self.total_marks >= pass_mark:
+            return "Average marks"
+        else:
+            return "No avarage Marks"
 
 # --- Schedule Models ---
 class ScheduleCreate(BaseModel):

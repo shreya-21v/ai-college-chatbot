@@ -3,8 +3,8 @@ from auth.router import router as auth_router
 from decouple import config
 import database # Import the refactored database module
 from models.schemas import ( # Using parenthesis for multiple lines
-    Course, UserDisplay, ChatQuery, Chat, CourseCreate, Grade, Schedule,
-    GradeCreate, ScheduleCreate, EnrollmentCreate, PromptUpdate
+    Course, UserDisplay, ChatQuery, Chat, CourseCreate, Schedule,
+    ScheduleCreate, EnrollmentCreate, PromptUpdate, InternalMarkCreate, InternalMarkDisplay
 )
 from auth.jwt import require_role, get_current_user # These are updated for psycopg2
 from typing import List
@@ -355,24 +355,37 @@ def get_chat_history(user: dict = any_logged_in_user):
 #  STUDENT FEATURES ENDPOINTS
 # ===============================================
 
-@app.get("/grades", response_model=List[Grade], tags=["Student Features"])
-def get_student_grades(user: dict = any_logged_in_user):
-    if user['role'] != 'student': raise HTTPException(status_code=403, detail="Only students can access grades.")
+# (Inside main.py)
+# --- REPLACE THE OLD 'GET /grades' with this ---
+@app.get("/marks/student", response_model=List[InternalMarkDisplay], tags=["Student Features"])
+def get_student_marks(user: dict = any_logged_in_user):
+    """
+    Get the internal marks and calculated totals for the logged-in student.
+    """
+    if user['role'] != 'student':
+         raise HTTPException(status_code=403, detail="Only students can access marks.")
+
     student_id = user['id']
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
+        # Join tables to get all required info for the Pydantic model
         cursor.execute('''
-            SELECT g.id, g.student_id, g.course_id, g.grade, c.name as course_name
-            FROM grades g JOIN courses c ON g.course_id = c.id
-            WHERE g.student_id = %s
+            SELECT 
+                m.student_id, m.course_id, m.internal_1, m.internal_2, m.internal_3,
+                c.name as course_name,
+                u.name as student_name
+            FROM internal_marks m
+            JOIN courses c ON m.course_id = c.id
+            JOIN users u ON m.student_id = u.id
+            WHERE m.student_id = %s
         ''', (student_id,))
-        grades_rows = cursor.fetchall()
-        return grades_rows
+        marks = cursor.fetchall()
+        return marks # Pydantic will auto-calculate total and status
     except (Exception, database.psycopg2.DatabaseError) as error:
-        print(f"DB Error fetching grades: {error}")
-        raise HTTPException(status_code=500, detail="Database error fetching grades.")
+        print(f"DB Error fetching marks: {error}")
+        raise HTTPException(status_code=500, detail="Database error fetching marks.")
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
@@ -438,28 +451,43 @@ def get_all_students(user: dict = require_staff_or_admin):
         if cursor: cursor.close()
         if conn: conn.close()
 
-@app.post("/grades", tags=["Staff Features"])
-def add_student_grade(
-    grade_data: GradeCreate,
+# (Inside main.py)
+# --- REPLACE THE OLD 'POST /grades' with this ---
+@app.post("/marks/internal", tags=["Staff Features"])
+def upsert_internal_marks(
+    marks_data: InternalMarkCreate,
     user: dict = require_staff_or_admin
 ):
+    """
+    Adds or updates the internal marks for a student in a course.
+    Uses UPSERT logic.
+    """
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
+        # This is an "UPSERT" command:
+        # It tries to INSERT. If it finds a conflict on (student_id, course_id),
+        # it will UPDATE the existing row instead.
         cursor.execute(
-            "INSERT INTO grades (student_id, course_id, grade) VALUES (%s, %s, %s)",
-            (grade_data.student_id, grade_data.course_id, grade_data.grade)
+            '''
+            INSERT INTO internal_marks (student_id, course_id, internal_1, internal_2, internal_3)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (student_id, course_id)
+            DO UPDATE SET
+                internal_1 = EXCLUDED.internal_1,
+                internal_2 = EXCLUDED.internal_2,
+                internal_3 = EXCLUDED.internal_3
+            ''',
+            (marks_data.student_id, marks_data.course_id, 
+             marks_data.internal_1, marks_data.internal_2, marks_data.internal_3)
         )
         conn.commit()
-        return {"message": "Grade added successfully"}
-    except database.psycopg2.IntegrityError as e:
-        if conn: conn.rollback()
-        raise HTTPException(status_code=400, detail=f"Invalid student or course ID: {e}")
+        return {"message": "Marks updated successfully."}
     except (Exception, database.psycopg2.DatabaseError) as error:
-        print(f"DB Error adding grade: {error}")
+        print(f"DB Error upserting marks: {error}")
         if conn: conn.rollback()
-        raise HTTPException(status_code=500, detail="Database error adding grade.")
+        raise HTTPException(status_code=500, detail="Database error updating marks.")
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
@@ -534,12 +562,6 @@ def enroll_student_in_course(
         if conn: conn.close()
 
     return {"message": "Student enrolled successfully."}
-
-# (Inside main.py)
-
-# ===============================================
-#  NEW AI SUMMARY ENDPOINT (STAFF/ADMIN)
-# ===============================================
 
 @app.get("/reports/student-summary/{student_id}", tags=["Reports", "Staff Features"])
 def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
@@ -638,10 +660,9 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
-# ===============================================
-#  REPORTS ENDPOINT
-# ===============================================
 
+# (Inside main.py)
+# --- REPLACE THE OLD 'GET /reports/grade-distribution' with this ---
 @app.get("/reports/grade-distribution", tags=["Reports"])
 def get_grade_distribution_report(user: dict = require_staff_or_admin):
     conn = None; cursor = None
@@ -654,10 +675,19 @@ def get_grade_distribution_report(user: dict = require_staff_or_admin):
         for course in courses:
             course_id = course['id']
             course_name = course['name']
-            cursor.execute("SELECT grade FROM grades WHERE course_id = %s", (course_id,))
-            grades = cursor.fetchall()
-            grade_counts = Counter(row['grade'] for row in grades)
-            report_data[course_name] = dict(grade_counts)
+
+            # Fetch total marks (internal_1 + 2 + 3) for the course
+            cursor.execute(
+                "SELECT (internal_1 + internal_2 + internal_3) as total FROM internal_marks WHERE course_id = %s", 
+                (course_id,)
+            )
+            totals = cursor.fetchall()
+
+            # We will report on pass/fail counts
+            pass_mark = 26.25
+            status_counts = Counter("Pass" if row['total'] >= pass_mark else "Fail" for row in totals)
+            report_data[course_name] = dict(status_counts)
+
         return report_data
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error generating grade report: {error}")
@@ -665,10 +695,6 @@ def get_grade_distribution_report(user: dict = require_staff_or_admin):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
-
-# ===============================================
-#  ADMIN FEATURES ENDPOINTS
-# ===============================================
 
 @app.get("/analytics/usage", tags=["Admin Features"])
 def get_usage_analytics(user: dict = require_admin_only):

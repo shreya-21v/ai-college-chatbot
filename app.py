@@ -140,7 +140,7 @@ def get_chat_response(message):
 
 # --- Main App Logic ---
 
-st.set_page_config(page_title="Brindavan Group of Institutions", layout="wide") # Use wide layout
+st.set_page_config(page_title="Brindavan Group of Institutions",page_icon="🎓", layout="wide") # Use wide layout
 
 # Initialize session state if it doesn't exist
 if 'logged_in' not in st.session_state:
@@ -256,24 +256,55 @@ else:
                 st.session_state.chat_history[-1]['bot'] = bot_response
                 st.rerun()
 
+    # (In app.py)
+# --- REPLACE the 'elif page == "Grades":' block ---
     elif page == "Grades":
-        st.title("📊 My Grades")
+        st.title("📊 My Internal Marks")
+
+        token = f"Bearer {st.session_state.get('access_token')}"
+        headers = {"Authorization": token}
+
         try:
-            response = requests.get(f"{BACKEND_URL}/grades", headers=headers)
+            # Call the new endpoint
+            response = requests.get(f"{BACKEND_URL}/marks/student", headers=headers)
+
             if response.status_code == 200:
-                grades = response.json()
-                if grades:
-                    st.subheader("Your Current Grades")
-                    display_data = [{"Course Name": g['course_name'], "Grade": g['grade']} for g in grades]
-                    st.dataframe(display_data, use_container_width=True) # Corrected
+                marks_list = response.json()
+                if marks_list:
+                    st.subheader("Your Marks (All internals out of 25)")
+
+                    # Define pass mark
+                    pass_mark = 26.25 # 35% of 75
+
+                    for item in marks_list:
+                        st.markdown(f"#### {item['course_name']}")
+                        total = item['total_marks']
+                        status = item['status']
+
+                        # Use columns for a clean layout
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        col1.metric("Internal 1", f"{item['internal_1']} / 25")
+                        col2.metric("Internal 2", f"{item['internal_2']} / 25")
+                        col3.metric("Internal 3", f"{item['internal_3']} / 25")
+                        col4.metric("Total", f"{total} / 75")
+
+                        # Show Pass/Fail status with color
+                        if status == "Pass":
+                            col5.success(f"Status: {status}")
+                        else:
+                            col5.error(f"Status: {status}")
+                        st.caption(f"Passing mark is {pass_mark}. You are {total - pass_mark:+.2f} marks { 'above' if status == 'Pass' else 'below' } this threshold.")
+                        st.divider()
+
                 else:
-                    st.write("No grades found.")
+                    st.write("No marks found.")
             elif response.status_code == 403:
-                 st.error("Only students can view grades.")
+                st.error("Only students can view marks.")
             else:
-                 st.error(f"Failed to fetch grades: {response.text}")
+                st.error(f"Failed to fetch marks: {response.text}")
+
         except Exception as e:
-            st.error(f"An error occurred fetching grades: {e}")
+            st.error(f"An error occurred fetching marks: {e}")
 
     elif page == "Schedules":
         st.title("🗓️ Course Schedules")
@@ -359,33 +390,58 @@ else:
                             else: st.error(f"Failed to add course: {response.text}")
                         except Exception as e: st.error(f"Error adding course: {e}")
 
-        with st.expander("🎓 Add Grade for Student"):
-             try:
-                 students_resp = requests.get(f"{BACKEND_URL}/students", headers=headers)
-                 courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
-                 if students_resp.status_code == 200 and courses_resp.status_code == 200:
-                     students = students_resp.json(); courses = courses_resp.json()
-                     student_options = {s['name']: s['id'] for s in students}
-                     course_options = {c['name']: c['id'] for c in courses}
-                     with st.form("add_grade_form", clear_on_submit=True):
-                         selected_student_name = st.selectbox("Select Student", options=student_options.keys())
-                         selected_course_name = st.selectbox("Select Course", options=course_options.keys())
-                         grade_value = st.text_input("Enter Grade (e.g., A, B+, 85%)")
-                         submitted_grade = st.form_submit_button("Add Grade")
-                         if submitted_grade:
-                             if not selected_student_name or not selected_course_name or not grade_value:
-                                 st.warning("Please select student, course, and enter a grade.")
-                             else:
-                                 student_id = student_options[selected_student_name]
-                                 course_id = course_options[selected_course_name]
-                                 grade_data = {"student_id": student_id, "course_id": course_id, "grade": grade_value}
-                                 try:
-                                     response = requests.post(f"{BACKEND_URL}/grades", json=grade_data, headers=headers)
-                                     if response.status_code == 200: st.success("Grade added successfully!")
-                                     else: st.error(f"Failed to add grade: {response.text}")
-                                 except Exception as e: st.error(f"Error adding grade: {e}")
-                 else: st.error("Could not load students or courses for grade entry.")
-             except Exception as e: st.error(f"Error loading data for grade form: {e}")
+        with st.expander("✍️ Enter/Update Internal Marks"):
+            try:
+             # Fetch students and courses for dropdowns
+                students_resp = requests.get(f"{BACKEND_URL}/students", headers=headers)
+                courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
+
+                if students_resp.status_code == 200 and courses_resp.status_code == 200:
+                    students = students_resp.json()
+                    courses = courses_resp.json()
+
+                    student_options = {s['name']: s['id'] for s in students}
+                    course_options = {c['name']: c['id'] for c in courses}
+
+                    with st.form("add_marks_form", clear_on_submit=True):
+                        st.write("Select a student and course to add or update their 3 internal marks.")
+
+                        col1, col2 = st.columns(2)
+                        selected_student_name = col1.selectbox("Select Student", options=student_options.keys(), key="mark_student")
+                        selected_course_name = col2.selectbox("Select Course", options=course_options.keys(), key="mark_course")
+
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        # Number inputs with 0-25 validation
+                        mark_1 = col_m1.number_input("Internal 1 Mark", min_value=0, max_value=25, value=0)
+                        mark_2 = col_m2.number_input("Internal 2 Mark", min_value=0, max_value=25, value=0)
+                        mark_3 = col_m3.number_input("Internal 3 Mark", min_value=0, max_value=25, value=0)
+
+                        submitted_marks = st.form_submit_button("Save Marks")
+
+                        if submitted_marks:
+                            if not selected_student_name or not selected_course_name:
+                                st.warning("Please select a student and a course.")
+                            else:
+                                marks_data = {
+                                    "student_id": student_options[selected_student_name],
+                                    "course_id": course_options[selected_course_name],
+                                    "internal_1": mark_1,
+                                    "internal_2": mark_2,
+                                    "internal_3": mark_3
+                                }
+                                try:
+                                    # Call the new upsert endpoint
+                                    response = requests.post(f"{BACKEND_URL}/marks/internal", json=marks_data, headers=headers)
+                                    if response.status_code == 200:
+                                        st.success("Marks saved successfully!")
+                                    else:
+                                        st.error(f"Failed to save marks: {response.text}")
+                                except Exception as e:
+                                    st.error(f"Error saving marks: {e}")
+                else:
+                    st.error("Could not load students or courses for marks entry form.")
+            except Exception as e:
+                st.error(f"Error loading data for marks form: {e}")
 
         with st.expander("🗓️ Add Course Schedule Entry"):
             try:
