@@ -293,7 +293,7 @@ else:
                             col5.error(f"Status: {status}")
                         difference = total - pass_mark
                         
-                        if status == "Pass":
+                        if status == "Average marks":
                             # Use :.2f to format to 2 decimal places
                             st.caption(f"You are {difference:.2f} marks above the passing mark of {pass_mark}.")
                         else:
