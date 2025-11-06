@@ -535,6 +535,109 @@ def enroll_student_in_course(
 
     return {"message": "Student enrolled successfully."}
 
+# (Inside main.py)
+
+# ===============================================
+#  NEW AI SUMMARY ENDPOINT (STAFF/ADMIN)
+# ===============================================
+
+@app.get("/reports/student-summary/{student_id}", tags=["Reports", "Staff Features"])
+def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
+    """
+    Generates a comprehensive AI summary for a specific student.
+    (Staff or Admin only)
+    """
+    conn = None; cursor = None
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Get Student Info
+        cursor.execute("SELECT name, email FROM users WHERE id = %s AND role = 'student'", (student_id,))
+        student = cursor.fetchone()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found.")
+        
+        # 2. Get Student's Grades
+        cursor.execute('''
+            SELECT c.name as course_name, g.grade 
+            FROM grades g
+            JOIN courses c ON g.course_id = c.id
+            WHERE g.student_id = %s
+        ''', (student_id,))
+        grades = cursor.fetchall()
+
+        # 3. Get Student's Enrolled Courses
+        cursor.execute('''
+            SELECT c.name as course_name, c.instructor
+            FROM enrollments e
+            JOIN courses c ON e.course_id = c.id
+            WHERE e.student_id = %s
+        ''', (student_id,))
+        enrollments = cursor.fetchall()
+
+        # 4. Get Student's Recent Chat History (e.g., last 10 messages)
+        cursor.execute(
+            'SELECT message, response FROM conversations WHERE user_id = %s ORDER BY timestamp DESC LIMIT 10',
+            (student_id,)
+        )
+        chat_history = cursor.fetchall()
+
+        # --- 5. Build the Prompt for the AI ---
+        prompt = f"""
+        You are an academic advisor. Analyze the following student's data and provide a 3-4 sentence professional summary of their academic progress, engagement, and any potential areas of concern.
+
+        STUDENT DATA:
+        - Name: {student['name']}
+        - Email: {student['email']}
+
+        ENROLLED COURSES:
+        """
+        if enrollments:
+            for course in enrollments:
+                prompt += f"- {course['course_name']} (with {course['instructor']})\n"
+        else:
+            prompt += "- Not enrolled in any courses.\n"
+
+        prompt += "\nGRADES:\n"
+        if grades:
+            for grade in grades:
+                prompt += f"- {grade['course_name']}: {grade['grade']}\n"
+        else:
+            prompt += "- No grades recorded.\n"
+
+        prompt += "\nRECENT CHATBOT ENGAGEMENT (User message -> Bot response):\n"
+        if chat_history:
+            for chat in reversed(chat_history): # Show oldest first
+                prompt += f"- User: \"{chat['message']}\" -> Bot: \"{chat['response']}\"\n"
+        else:
+            prompt += "- No recent chat history.\n"
+        
+        prompt += "\nSUMMARY:"
+        # --- End of Prompt ---
+
+        if not GOOGLE_API_KEY:
+             raise HTTPException(status_code=500, detail="AI service is not configured.")
+
+        # --- 6. Call Gemini AI (One-shot generation, not chat) ---
+        try:
+            model = genai.GenerativeModel(model_name='gemini-2.5-flash-preview-09-2025')
+            response = model.generate_content(prompt)
+            summary_text = response.text
+        except Exception as e:
+            print(f"Google Gemini API error (Summary): {e}")
+            raise HTTPException(status_code=500, detail="Error connecting to AI service for summary.")
+
+        return {"summary": summary_text}
+
+    except HTTPException:
+         raise
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        print(f"DB Error generating summary: {error}")
+        raise HTTPException(status_code=500, detail="Database error generating summary.")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
 # ===============================================
 #  REPORTS ENDPOINT
 # ===============================================

@@ -494,15 +494,51 @@ else:
             response = requests.get(f"{BACKEND_URL}/students", headers=headers)
             if response.status_code == 200:
                 students = response.json()
-                if students:
-                    display_data = [{"id": s['id'], "name": s['name'], "email": s['email']} for s in students]
-                    st.dataframe(display_data, use_container_width=True) # Corrected
-                else:
+                if not students:
                     st.write("No students found.")
+                else:
+                    # --- Create a dynamic list instead of a dataframe ---
+                    st.markdown("---") # Start with a line
+                    for s in students:
+                        student_id = s['id']
+
+                        # Create columns for student info and the button
+                        col1, col2, col3 = st.columns([3, 3, 2])
+
+                        with col1:
+                            st.markdown(f"**{s['name']}**")
+                            st.caption(f"ID: {student_id}")
+
+                        with col2:
+                            st.write(s['email'])
+
+                        with col3:
+                            # "Analyze" button
+                            if st.button("Generate AI Summary", key=f"analyze_{student_id}"):
+                                with st.spinner(f"Analyzing {s['name']}..."):
+                                    try:
+                                        summary_resp = requests.get(
+                                            f"{BACKEND_URL}/reports/student-summary/{student_id}", 
+                                            headers=headers
+                                        )
+                                        if summary_resp.status_code == 200:
+                                            # Store summary in session state to keep it open
+                                            st.session_state[f"summary_for_{student_id}"] = summary_resp.json().get("summary")
+                                        else:
+                                            st.error(f"Failed to get summary: {summary_resp.text}")
+                                    except Exception as e:
+                                        st.error(f"Error during analysis: {e}")
+
+                        # Display the summary if it exists in session state
+                        if f"summary_for_{student_id}" in st.session_state:
+                            st.info(st.session_state[f"summary_for_{student_id}"])
+
+                        st.markdown("---") # Divider for next student
+
             elif response.status_code == 403:
-                 st.error("Access denied. Staff or Admin only.")
+                st.error("Access denied. Staff or Admin only.")
             else:
-                 st.error(f"Failed to fetch student data: {response.text}")
+                st.error(f"Failed to fetch student data: {response.text}")
         except Exception as e:
             st.error(f"An error occurred fetching student data: {e}")
 
