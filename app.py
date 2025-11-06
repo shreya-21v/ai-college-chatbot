@@ -256,8 +256,6 @@ else:
                 st.session_state.chat_history[-1]['bot'] = bot_response
                 st.rerun()
 
-    # (In app.py)
-# --- REPLACE the 'elif page == "Grades":' block ---
     elif page == "Grades":
         st.title("📊 My Internal Marks")
 
@@ -293,7 +291,14 @@ else:
                             col5.success(f"Status: {status}")
                         else:
                             col5.error(f"Status: {status}")
-                        st.caption(f"Passing mark is {pass_mark}. You are {total - pass_mark:+.2f} marks { 'above' if status == 'Pass' else 'below' } this threshold.")
+                        difference = total - pass_mark
+                        
+                        if status == "Pass":
+                            # Use :.2f to format to 2 decimal places
+                            st.caption(f"You are {difference:.2f} marks above the passing mark of {pass_mark}.")
+                        else:
+                            # Use abs() to show a positive number for how many marks are needed
+                            st.caption(f"You are {abs(difference):.2f} marks below the passing mark of {pass_mark}.")
                         st.divider()
 
                 else:
