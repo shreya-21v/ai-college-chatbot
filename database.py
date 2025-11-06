@@ -6,16 +6,8 @@ import sys # For error handling
 
 DATABASE_URL = config('DATABASE_URL', default=None)
 
-# --- Check if DATABASE_URL is set ---
-# This check prevents errors during local startup if the .env variable isn't set yet
-# For Render deployment, the environment variable MUST be set.
 if DATABASE_URL is None and 'pytest' not in sys.modules: # Check if not running tests
      print("ERROR: DATABASE_URL environment variable not set.")
-     # Optionally, you could fall back to SQLite for local here,
-     # but it's better to set the DATABASE_URL in your local .env too.
-     # For now, we'll just exit or raise an error if it's missing during normal run.
-     # raise ValueError("DATABASE_URL environment variable not set.")
-     # Or provide a default local SQLite connection for development:
      print("WARNING: DATABASE_URL not set. Falling back to local SQLite 'chatbot.db' for development.")
      import sqlite3
      DATABASE_NAME = "chatbot.db"
@@ -55,7 +47,8 @@ def create_tables():
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL
+                role TEXT NOT NULL,
+                year_of_study INTEGER
             )
         ''')
 
@@ -65,7 +58,8 @@ def create_tables():
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT NOT NULL,
-                instructor TEXT NOT NULL
+                instructor TEXT NOT NULL,
+                year_of_study INTEGER NOT NULL DEFAULT 1
             )
         ''')
 
@@ -156,6 +150,47 @@ def create_tables():
         cursor.close()
         conn.close()
 
+def migrate_database():
+    """
+    Applies pending schema migrations (like adding new columns)
+    to the existing database.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        print("Running database migrations...")
+
+        # --- Migration 1: Add year_of_study to users table ---
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN year_of_study INTEGER")
+            conn.commit()
+            print("Migration successful: Added 'year_of_study' to 'users' table.")
+        except (Exception, psycopg2.DatabaseError) as e:
+            # Catch error if column already exists (common)
+            print(f"Info (Migration 1): {e}") # Will print 'column "year_of_study" of relation "users" already exists'
+            conn.rollback() # Rollback the failed ALTER TABLE transaction
+
+        # --- Migration 2: Add year_of_study to courses table ---
+        try:
+            # Add the column with a default value so existing rows are not null
+            cursor.execute("ALTER TABLE courses ADD COLUMN year_of_study INTEGER NOT NULL DEFAULT 1")
+            conn.commit()
+            print("Migration successful: Added 'year_of_study' to 'courses' table.")
+        except (Exception, psycopg2.DatabaseError) as e:
+            print(f"Info (Migration 2): {e}") # Will print 'column "year_of_study" of relation "courses" already exists'
+            conn.rollback()
+
+        print("Database migrations complete.")
+
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(f"Error during migration: {error}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 # Keep this for local setup if needed (though startup event handles it on deploy)
 if __name__ == '__main__':
      # You might want to add DATABASE_URL to your local .env file

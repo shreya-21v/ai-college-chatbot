@@ -11,9 +11,8 @@ from typing import List
 from langdetect import detect, LangDetectException
 from collections import Counter
 import urllib.parse
-from database import create_tables
+from database import create_tables, migrate_database
 
-# --- NEW: Google Gemini API Setup ---
 import google.generativeai as genai
 GOOGLE_API_KEY = config('GOOGLE_API_KEY', default=None)
 if GOOGLE_API_KEY:
@@ -38,10 +37,11 @@ app = FastAPI()
 def on_startup():
     print("Running startup tasks...")
     try:
-         create_tables() # Call the function from database.py
+         migrate_database() 
+         create_tables() 
          print("Startup tasks complete.")
     except Exception as e:
-         print(f"Error during startup task create_tables: {e}")
+         print(f"Error during startup task: {e}")
 
 # Include Authentication Router
 app.include_router(auth_router, tags=["Authentication"])
@@ -71,8 +71,7 @@ def create_course(
         conn = database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO courses (name, description, instructor) VALUES (%s, %s, %s)',
-            (course.name, course.description, course.instructor)
+            'INSERT INTO courses (name, description, instructor, year_of_study) VALUES (%s, %s, %s, %s)',(course.name, course.description, course.instructor, course.year_of_study)
         )
         conn.commit()
         return {"message": "Course created successfully", "course": course.model_dump()}

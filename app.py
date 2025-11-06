@@ -54,10 +54,6 @@ h2 {
 }
 </style>
 """, unsafe_allow_html=True)
-# --- END STYLING ---
-
-
-# --- Utility Functions (No changes here) ---
 
 def login_user(username, password):
     """Attempts to log in the user via the FastAPI backend."""
@@ -177,6 +173,7 @@ if not st.session_state['logged_in']:
             reg_name = st.text_input("Full Name")
             reg_email = st.text_input("Email")
             reg_password = st.text_input("Choose Password", type="password")
+            reg_year = st.selectbox("Year of Study", [1, 2, 3, 4])
             reg_role = "student" # Default registration role
             submitted_register = st.form_submit_button("Register")
 
@@ -188,7 +185,8 @@ if not st.session_state['logged_in']:
                         "name": reg_name,
                         "email": reg_email,
                         "password": reg_password,
-                        "role": reg_role 
+                        "role": reg_role, 
+                        "year_of_study": reg_year
                     }
                     try:
                         response = requests.post(f"{BACKEND_URL}/register", json=user_data)
@@ -383,12 +381,13 @@ else:
                 new_name = st.text_input("Course Name")
                 new_desc = st.text_area("Description")
                 new_instructor = st.text_input("Instructor")
+                new_year = st.selectbox("Year of Study", [1, 2, 3, 4])
                 submitted_new = st.form_submit_button("Add Course")
                 if submitted_new:
                     if not new_name or not new_desc or not new_instructor:
                         st.warning("Please fill out all fields.")
                     else:
-                        new_course_data = {"name": new_name, "description": new_desc, "instructor": new_instructor}
+                        new_course_data = {"name": new_name, "description": new_desc, "instructor": new_instructor,"year_of_study": new_year}
                         try:
                             response = requests.post(f"{BACKEND_URL}/courses", json=new_course_data, headers=headers)
                             if response.status_code == 200: st.success("Course added successfully!"); st.rerun()
@@ -612,13 +611,14 @@ else:
                 create_name = st.text_input("Full Name")
                 create_email = st.text_input("Email")
                 create_password = st.text_input("Password", type="password")
-                create_role = st.selectbox("Role", ["staff", "admin", "student"], index=0) 
+                create_role = st.selectbox("Role", ["staff", "admin", "student"], index=0)
+                create_year = st.number_input("Year of Study (if student)", min_value=1, max_value=4, value=1, step=1) 
                 submitted_create = st.form_submit_button("Create User")
                 if submitted_create:
                     if not create_name or not create_email or not create_password:
                         st.warning("Please fill out all fields.")
                     else:
-                        new_user_data = {"name": create_name, "email": create_email, "password": create_password, "role": create_role}
+                        new_user_data = {"name": create_name, "email": create_email, "password": create_password, "role": create_role,"year_of_study": create_year if create_role == 'student' else None}
                         try:
                             response = requests.post(f"{BACKEND_URL}/register", json=new_user_data, headers=headers)
                             if response.status_code == 200:

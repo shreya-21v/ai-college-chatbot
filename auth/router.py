@@ -30,9 +30,7 @@ def register_user(user: User):
 
         # Insert the new user using the cursor and RETURNING id
         cursor.execute(
-            'INSERT INTO users (name, email, password, role) VALUES (%s, %s, %s, %s) RETURNING id', # Use RETURNING id for PostgreSQL
-            (user.name, user.email, hashed_password, user.role)
-        )
+            'INSERT INTO users (name, email, password, role, year_of_study) VALUES (%s, %s, %s, %s, %s) RETURNING id',(user.name, user.email, hashed_password, user.role, user.year_of_study))
         new_user_id_row = cursor.fetchone() # Fetch the returned ID row
         if not new_user_id_row:
              raise HTTPException(status_code=500, detail="Failed to create user and get ID.")
