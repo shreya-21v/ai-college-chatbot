@@ -82,7 +82,6 @@ def login_user(username, password):
                 user_details = user_details_response.json()
                 st.session_state['user_role'] = user_details.get('role')
                 st.session_state['user_name'] = user_details.get('name', 'user')
-                # --- ADDED THIS LINE ---
                 st.session_state['user_year_of_study'] = user_details.get('year_of_study') 
             else:
                 print(f"Error fetching user details: {user_details_response.status_code}")
@@ -181,7 +180,7 @@ if not st.session_state['logged_in']:
             reg_email = st.text_input("Email")
             reg_password = st.text_input("Choose Password", type="password")
             reg_year = st.selectbox("Year of Study", [1, 2, 3, 4])
-            reg_role = "student" # Default registration role
+            reg_role = "admin" # Default registration role
             submitted_register = st.form_submit_button("Register")
 
             if submitted_register:
