@@ -3,25 +3,27 @@ from auth.router import router as auth_router
 from decouple import config
 import database # Import the refactored database module
 from models.schemas import ( # Using parenthesis for multiple lines
-    Course, UserDisplay, ChatQuery, Chat, CourseCreate, Schedule,
-    ScheduleCreate, EnrollmentCreate, PromptUpdate, InternalMarkCreate, InternalMarkDisplay
+    Course, UserDisplay, ChatQuery, Chat, CourseCreate, Grade, Schedule,
+    GradeCreate, ScheduleCreate, EnrollmentCreate, PromptUpdate
 )
 from auth.jwt import require_role, get_current_user # These are updated for psycopg2
 from typing import List
-from typing import Optional 
-from fastapi import Query
 from langdetect import detect, LangDetectException
 from collections import Counter
 import urllib.parse
-from database import create_tables, migrate_database
+from database import create_tables
 
+# --- NEW: Google Gemini API Setup ---
 import google.generativeai as genai
 GOOGLE_API_KEY = config('GOOGLE_API_KEY', default=None)
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 else:
     print("Warning: GOOGLE_API_KEY not found. Chatbot AI will not function.")
+# --- End Gemini Setup ---
 
+
+# --- Simulated FAQ Database ---
 FAQ_DATA = {
     "library hours": "The main library is open from 8 AM to 10 PM on weekdays and 10 AM to 6 PM on weekends.",
     "admission deadline": "The admission deadline for the next semester is November 15th. You can find more details on the admissions website.",
@@ -36,11 +38,10 @@ app = FastAPI()
 def on_startup():
     print("Running startup tasks...")
     try:
-         migrate_database() 
-         create_tables() 
+         create_tables() # Call the function from database.py
          print("Startup tasks complete.")
     except Exception as e:
-         print(f"Error during startup task: {e}")
+         print(f"Error during startup task create_tables: {e}")
 
 # Include Authentication Router
 app.include_router(auth_router, tags=["Authentication"])
@@ -70,7 +71,8 @@ def create_course(
         conn = database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO courses (name, description, instructor, year_of_study) VALUES (%s, %s, %s, %s)',(course.name, course.description, course.instructor, course.year_of_study)
+            'INSERT INTO courses (name, description, instructor) VALUES (%s, %s, %s)',
+            (course.name, course.description, course.instructor)
         )
         conn.commit()
         return {"message": "Course created successfully", "course": course.model_dump()}
@@ -83,24 +85,13 @@ def create_course(
         if conn: conn.close()
 
 @app.get("/courses", response_model=List[Course], tags=["Courses"])
-def get_all_courses(
-    user: dict = any_logged_in_user,
-    year: Optional[int] = Query(None) # Add year query parameter
-):
+def get_all_courses(user: dict = any_logged_in_user):
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        query = 'SELECT id, name, description, instructor, year_of_study FROM courses'
-        params = []
-        
-        if year:
-            query += ' WHERE year_of_study = %s'
-            params.append(year)
-            
-        cursor.execute(query, params)
-        courses = cursor.fetchall()
+        cursor.execute('SELECT id, name, description, instructor FROM courses')
+        courses = cursor.fetchall() # RealDictCursor returns list of dicts
         return courses
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error fetching courses: {error}")
@@ -139,8 +130,7 @@ def update_course(
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE courses SET name = %s, description = %s, instructor = %s, year_of_study = %s WHERE id = %s',
-    (course.name, course.description, course.instructor, course.year_of_study, course_id))
+        cursor.execute('SELECT id FROM courses WHERE id = %s', (course_id,))
         db_course = cursor.fetchone()
         if not db_course:
             raise HTTPException(status_code=404, detail="Course not found")
@@ -365,70 +355,39 @@ def get_chat_history(user: dict = any_logged_in_user):
 #  STUDENT FEATURES ENDPOINTS
 # ===============================================
 
-# (Inside main.py)
-# --- REPLACE THE OLD 'GET /grades' with this ---
-@app.get("/marks/student", response_model=List[InternalMarkDisplay], tags=["Student Features"])
-def get_student_marks(
-    user: dict = any_logged_in_user,
-    year: Optional[int] = Query(None) # Accept year param
-):
-    if user['role'] != 'student':
-         raise HTTPException(status_code=403, detail="Only students can access marks.")
-    
+@app.get("/grades", response_model=List[Grade], tags=["Student Features"])
+def get_student_grades(user: dict = any_logged_in_user):
+    if user['role'] != 'student': raise HTTPException(status_code=403, detail="Only students can access grades.")
     student_id = user['id']
-    student_year = user.get('year_of_study') # Get student's registered year
-    
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        # Student's year from their profile is the filter
-        query = '''
-            SELECT 
-                m.student_id, m.course_id, m.internal_1, m.internal_2, m.internal_3,
-                c.name as course_name,
-                u.name as student_name
-            FROM internal_marks m
-            JOIN courses c ON m.course_id = c.id
-            JOIN users u ON m.student_id = u.id
-            WHERE m.student_id = %s AND c.year_of_study = %s
-        '''
-        params = (student_id, student_year)
-
-        cursor.execute(query, params)
-        marks = cursor.fetchall()
-        return marks
+        cursor.execute('''
+            SELECT g.id, g.student_id, g.course_id, g.grade, c.name as course_name
+            FROM grades g JOIN courses c ON g.course_id = c.id
+            WHERE g.student_id = %s
+        ''', (student_id,))
+        grades_rows = cursor.fetchall()
+        return grades_rows
     except (Exception, database.psycopg2.DatabaseError) as error:
-        print(f"DB Error fetching marks: {error}")
-        raise HTTPException(status_code=500, detail="Database error fetching marks.")
+        print(f"DB Error fetching grades: {error}")
+        raise HTTPException(status_code=500, detail="Database error fetching grades.")
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
 
 @app.get("/schedules", response_model=List[Schedule], tags=["Student Features"])
-def get_all_schedules(
-    user: dict = any_logged_in_user,
-    year: Optional[int] = Query(None) # Add year query parameter
-):
+def get_all_schedules(user: dict = any_logged_in_user):
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        query = '''
+        cursor.execute('''
             SELECT s.id, s.course_id, s.day_of_week, s.start_time, s.end_time, s.location, c.name as course_name
             FROM schedules s JOIN courses c ON s.course_id = c.id
-        '''
-        params = []
-        
-        if year:
-            query += ' WHERE c.year_of_study = %s'
-            params.append(year)
-            
-        query += ' ORDER BY c.name, s.day_of_week, s.start_time'
-        
-        cursor.execute(query, params)
+            ORDER BY c.name, s.day_of_week, s.start_time
+        ''')
         schedule_rows = cursor.fetchall()
         return schedule_rows
     except (Exception, database.psycopg2.DatabaseError) as error:
@@ -439,31 +398,17 @@ def get_all_schedules(
         if conn: conn.close()
 
 @app.get("/schedules/instructor/{instructor_name}", response_model=List[Schedule], tags=["Student Features", "Staff Features"])
-def get_instructor_schedule(
-    instructor_name: str, 
-    user: dict = any_logged_in_user,
-    year: Optional[int] = Query(None) # Add year query parameter
-):
+def get_instructor_schedule(instructor_name: str, user: dict = any_logged_in_user):
     decoded_instructor_name = urllib.parse.unquote(instructor_name)
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        query = '''
+        cursor.execute('''
             SELECT s.id, s.course_id, s.day_of_week, s.start_time, s.end_time, s.location, c.name as course_name
             FROM schedules s JOIN courses c ON s.course_id = c.id
-            WHERE c.instructor = %s
-        '''
-        params = [decoded_instructor_name]
-        
-        if year:
-            query += ' AND c.year_of_study = %s'
-            params.append(year)
-            
-        query += ' ORDER BY s.day_of_week, s.start_time'
-        
-        cursor.execute(query, params)
+            WHERE c.instructor = %s ORDER BY s.day_of_week, s.start_time
+        ''', (decoded_instructor_name,))
         schedule_rows = cursor.fetchall()
         return schedule_rows
     except (Exception, database.psycopg2.DatabaseError) as error:
@@ -478,23 +423,12 @@ def get_instructor_schedule(
 # ===============================================
 
 @app.get("/students", response_model=List[UserDisplay], tags=["Staff Features"])
-def get_all_students(
-    user: dict = require_staff_or_admin,
-    year: Optional[int] = Query(None) # Add year query parameter
-):
+def get_all_students(user: dict = require_staff_or_admin):
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        query = "SELECT id, name, email, role, year_of_study FROM users WHERE role = 'student'"
-        params = []
-        
-        if year:
-            query += ' AND year_of_study = %s'
-            params.append(year)
-            
-        cursor.execute(query, params)
+        cursor.execute("SELECT id, name, email, role FROM users WHERE role = 'student'")
         students = cursor.fetchall()
         return students
     except (Exception, database.psycopg2.DatabaseError) as error:
@@ -504,43 +438,28 @@ def get_all_students(
         if cursor: cursor.close()
         if conn: conn.close()
 
-# (Inside main.py)
-# --- REPLACE THE OLD 'POST /grades' with this ---
-@app.post("/marks/internal", tags=["Staff Features"])
-def upsert_internal_marks(
-    marks_data: InternalMarkCreate,
+@app.post("/grades", tags=["Staff Features"])
+def add_student_grade(
+    grade_data: GradeCreate,
     user: dict = require_staff_or_admin
 ):
-    """
-    Adds or updates the internal marks for a student in a course.
-    Uses UPSERT logic.
-    """
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # This is an "UPSERT" command:
-        # It tries to INSERT. If it finds a conflict on (student_id, course_id),
-        # it will UPDATE the existing row instead.
         cursor.execute(
-            '''
-            INSERT INTO internal_marks (student_id, course_id, internal_1, internal_2, internal_3)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (student_id, course_id)
-            DO UPDATE SET
-                internal_1 = EXCLUDED.internal_1,
-                internal_2 = EXCLUDED.internal_2,
-                internal_3 = EXCLUDED.internal_3
-            ''',
-            (marks_data.student_id, marks_data.course_id, 
-             marks_data.internal_1, marks_data.internal_2, marks_data.internal_3)
+            "INSERT INTO grades (student_id, course_id, grade) VALUES (%s, %s, %s)",
+            (grade_data.student_id, grade_data.course_id, grade_data.grade)
         )
         conn.commit()
-        return {"message": "Marks updated successfully."}
-    except (Exception, database.psycopg2.DatabaseError) as error:
-        print(f"DB Error upserting marks: {error}")
+        return {"message": "Grade added successfully"}
+    except database.psycopg2.IntegrityError as e:
         if conn: conn.rollback()
-        raise HTTPException(status_code=500, detail="Database error updating marks.")
+        raise HTTPException(status_code=400, detail=f"Invalid student or course ID: {e}")
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        print(f"DB Error adding grade: {error}")
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail="Database error adding grade.")
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
@@ -615,6 +534,12 @@ def enroll_student_in_course(
         if conn: conn.close()
 
     return {"message": "Student enrolled successfully."}
+
+# (Inside main.py)
+
+# ===============================================
+#  NEW AI SUMMARY ENDPOINT (STAFF/ADMIN)
+# ===============================================
 
 @app.get("/reports/student-summary/{student_id}", tags=["Reports", "Staff Features"])
 def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
@@ -713,41 +638,26 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+# ===============================================
+#  REPORTS ENDPOINT
+# ===============================================
 
-# (Inside main.py)
-# --- REPLACE THE OLD 'GET /reports/grade-distribution' with this ---
 @app.get("/reports/grade-distribution", tags=["Reports"])
-def get_grade_distribution_report(
-    user: dict = require_staff_or_admin,
-    year: Optional[int] = Query(None) # Add year query parameter
-):
+def get_grade_distribution_report(user: dict = require_staff_or_admin):
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        course_query = "SELECT id, name FROM courses"
-        course_params = []
-        if year:
-            course_query += " WHERE year_of_study = %s"
-            course_params.append(year)
-            
-        cursor.execute(course_query, course_params)
+        cursor.execute("SELECT id, name FROM courses")
         courses = cursor.fetchall()
         report_data = {}
-        
         for course in courses:
             course_id = course['id']
             course_name = course['name']
-            
-            # Fetch total marks for this course
-            cursor.execute("SELECT (internal_1 + internal_2 + internal_3) as total FROM internal_marks WHERE course_id = %s", (course_id,))
-            totals = cursor.fetchall()
-            
-            pass_mark = 26.25
-            status_counts = Counter("Pass" if row['total'] >= pass_mark else "Fail" for row in totals)
-            report_data[course_name] = dict(status_counts)
-            
+            cursor.execute("SELECT grade FROM grades WHERE course_id = %s", (course_id,))
+            grades = cursor.fetchall()
+            grade_counts = Counter(row['grade'] for row in grades)
+            report_data[course_name] = dict(grade_counts)
         return report_data
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error generating grade report: {error}")
@@ -755,6 +665,10 @@ def get_grade_distribution_report(
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+
+# ===============================================
+#  ADMIN FEATURES ENDPOINTS
+# ===============================================
 
 @app.get("/analytics/usage", tags=["Admin Features"])
 def get_usage_analytics(user: dict = require_admin_only):
