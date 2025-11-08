@@ -82,7 +82,6 @@ def login_user(username, password):
                 user_details = user_details_response.json()
                 st.session_state['user_role'] = user_details.get('role')
                 st.session_state['user_name'] = user_details.get('name', 'user')
-                # --- ADDED THIS LINE ---
                 st.session_state['user_year_of_study'] = user_details.get('year_of_study') 
             else:
                 print(f"Error fetching user details: {user_details_response.status_code}")
@@ -154,7 +153,7 @@ if 'chat_history' not in st.session_state:
 # --- 1. LOGIN PAGE (MODIFIED) ---
 if not st.session_state['logged_in']:
     
-    st.title("🎓 Hello, from your personal college guide")
+    st.title("🎓 Hello, from your Personal College Guide")
     
     # Placeholder for a college banner image
     st.image("banner.png", use_container_width=True)
@@ -369,13 +368,97 @@ else:
         with st.expander("➕ Add New Course"):
             # ... (Your existing Add New Course form code) ...
             # Make sure the form includes the 'year_of_study' selectbox
-            pass
+            with st.form("add_course_form", clear_on_submit=True):
+                st.write("Fill in the details for a new course.")
+                course_name = st.text_input("Course Name")
+                course_desc = st.text_area("Course Description")
+                course_instructor = st.text_input("Instructor Name")
+                # This is the dropdown
+                course_year = st.selectbox("Year of Study", [1, 2, 3, 4], key="add_course_year")
+                
+                submitted_add_course = st.form_submit_button("Add Course")
+                
+                if submitted_add_course:
+                    if not course_name or not course_instructor:
+                        st.warning("Please fill out at least Course Name and Instructor.")
+                    else:
+                        course_data = {
+                            "name": course_name,
+                            "description": course_desc,
+                            "instructor": course_instructor,
+                            "year_of_study": course_year
+                        }
+                        try:
+                            response = requests.post(f"{BACKEND_URL}/courses", json=course_data, headers=headers)
+                            if response.status_code == 200:
+                                st.success("Course added successfully!")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to add course: {response.text}")
+                        except Exception as e:
+                            st.error(f"An error occurred: {e}")
         with st.expander("✍️ Enter/Update Internal Marks"):
             # ... (Your existing Enter/Update Marks form code) ...
-            pass
+            with st.form("add_marks_form", clear_on_submit=True):
+                st.write("Enter or update marks for a student in a specific course.")
+                student_email = st.text_input("Student Email")
+                course_id = st.number_input("Course ID", min_value=1, step=1)
+                internal_1 = st.number_input("Internal 1 Marks (out of 25)", min_value=0.0, max_value=25.0, step=0.5)
+                internal_2 = st.number_input("Internal 2 Marks (out of 25)", min_value=0.0, max_value=25.0, step=0.5)
+                internal_3 = st.number_input("Internal 3 Marks (out of 25)", min_value=0.0, max_value=25.0, step=0.5)
+                
+                submitted_add_marks = st.form_submit_button("Submit Marks")
+                
+                if submitted_add_marks:
+                    marks_data = {
+                        "student_email": student_email,
+                        "course_id": course_id,
+                        "internal_1": internal_1,
+                        "internal_2": internal_2,
+                        "internal_3": internal_3
+                    }
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/grades", json=marks_data, headers=headers)
+                        if response.status_code == 200:
+                            st.success("Marks updated successfully!")
+                        else:
+                            st.error(f"Failed to update marks: {response.text}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {e}")
         with st.expander("🗓️ Add Course Schedule Entry"):
             # ... (Your existing Add Schedule Entry form code) ...
-            pass
+            with st.form("add_schedule_form", clear_on_submit=True):
+                st.write("Add a new class session to the schedule.")
+                course_id_sched = st.number_input("Course ID", min_value=1, step=1, key="sched_course_id")
+                day_of_week = st.selectbox("Day of Week", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])
+                # Using st.time_input to get time objects, then convert to string
+                start_time_obj = st.time_input("Start Time")
+                end_time_obj = st.time_input("End Time")
+                location = st.text_input("Location (e.g., Room 101)", "N/A")
+
+                submitted_add_schedule = st.form_submit_button("Add to Schedule")
+
+                if submitted_add_schedule:
+                    # Convert time objects to "HH:MM" string format
+                    start_time_str = start_time_obj.strftime("%H:%M")
+                    end_time_str = end_time_obj.strftime("%H:%M")
+
+                    schedule_data = {
+                        "course_id": course_id_sched,
+                        "day_of_week": day_of_week,
+                        "start_time": start_time_str,
+                        "end_time": end_time_str,
+                        "location": location
+                    }
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/schedules", json=schedule_data, headers=headers)
+                        if response.status_code == 200:
+                            st.success("Schedule entry added!")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to add schedule: {response.text}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {e}")
 
         st.divider()
         st.subheader(f"Existing Courses (Year: {year_filter if year_filter else 'All'})")
@@ -385,8 +468,6 @@ else:
             if response.status_code == 200:
                 courses = response.json()
                 if courses:
-                    # ... (Your existing code to display courses, edit, and delete) ...
-                    # This part remains the same, it just shows the filtered list
                     display_data = [{"id": c['id'], "name": c['name'], "description": c['description'], "instructor": c['instructor'], "year": c['year_of_study']} for c in courses]
                     cols = st.columns((0.5, 2, 3, 2, 1, 1, 1)) # Added year
                     column_headers = ["ID", "Name", "Description", "Instructor", "Year", "Edit", "Delete"]
@@ -403,11 +484,43 @@ else:
                         with cols[5]:
                              with st.expander("✏️", expanded=False):
                                  with st.form(f"edit_form_{row_key}", clear_on_submit=True):
-                                     # ... (your existing edit form code) ...
-                                     pass
+                                    st.write(f"Editing Course ID: {course_data['id']}")
+                                    edit_name = st.text_input("Name", value=course_data['name'], key=f"name_{row_key}")
+                                    edit_desc = st.text_area("Description", value=course_data['description'], key=f"desc_{row_key}")
+                                    edit_instructor = st.text_input("Instructor", value=course_data['instructor'], key=f"inst_{row_key}")
+                                    edit_year = st.selectbox("Year", [1, 2, 3, 4], index=course_data['year'] - 1, key=f"year_{row_key}")
+                                        
+                                    submitted_edit = st.form_submit_button("Update")
+                                        
+                                    if submitted_edit:
+                                        update_data = {
+                                                "name": edit_name,
+                                                "description": edit_desc,
+                                                "instructor": edit_instructor,
+                                                "year_of_study": edit_year
+                                            }
+                                    try:
+                                                response = requests.put(f"{BACKEND_URL}/courses/{course_data['id']}", json=update_data, headers=headers)
+                                                if response.status_code == 200:
+                                                    st.success("Course updated!")
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"Update failed: {response.text}")
+                                    except Exception as e:
+                                                st.error(f"An error occurred: {e}")
+
                         if cols[6].button("🗑️", key=f"delete_{row_key}"):
-                            # ... (your existing delete button code) ...
-                            pass
+                            try:
+                                        response = requests.delete(f"{BACKEND_URL}/courses/{course_data['id']}", headers=headers)
+                                        if response.status_code == 200:
+                                            st.success("Course deleted!")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Delete failed: {response.text}")
+                            except Exception as e:
+                                        st.error(f"An error occurred: {e}")
+                            
+    
                 else:
                     st.write(f"No courses found for Year {year_filter if year_filter else 'All'}.")
             else: st.error(f"Failed to fetch courses: {response.text}")
@@ -417,9 +530,27 @@ else:
         st.title("🧑‍🎓 Student Data Access")
         
         with st.expander("✅ Enroll Student in Course"):
-            # ... (Your existing Enroll Student form code, no changes needed) ...
-            pass
-        
+            with st.form("enroll_student_form", clear_on_submit=True):
+                st.write("Enroll an existing student into an existing course.")
+                enroll_student_email = st.text_input("Student Email")
+                enroll_course_id = st.number_input("Course ID", min_value=1, step=1)
+                
+                submitted_enroll = st.form_submit_button("Enroll Student")
+                
+                if submitted_enroll:
+                    enroll_data = {
+                        "student_email": enroll_student_email,
+                        "course_id": enroll_course_id
+                    }
+                    try:
+                        response = requests.post(f"{BACKEND_URL}/students/enroll", json=enroll_data, headers=headers)
+                        if response.status_code == 200:
+                            st.success(f"Student {enroll_student_email} enrolled in course {enroll_course_id}!")
+                        else:
+                            st.error(f"Enrollment failed: {response.text}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {e}")
+            
         st.divider() 
         st.subheader(f"List of Students (Year: {year_filter if year_filter else 'All'})")
         try:
@@ -474,7 +605,44 @@ else:
 
         with st.expander("➕ Create New User (Staff/Admin)"):
             # ... (Your existing Create User form code, no changes needed) ...
-            pass
+            with st.form("create_user_form", clear_on_submit=True):
+                st.write("Create a new staff or admin user.")
+                new_name = st.text_input("Full Name")
+                new_email = st.text_input("Email (Username)")
+                new_password = st.text_input("Password", type="password")
+                new_role = st.selectbox("User Role", ["staff", "admin"]) 
+                new_year_option = st.selectbox("Year of Study (if applicable)", ["N/A", 1, 2, 3, 4]) 
+                
+                submitted_create_user = st.form_submit_button("Create User")
+
+                if submitted_create_user:
+                    if not new_name or not new_email or not new_password:
+                        st.warning("Please fill out all fields.")
+                    else:
+                        user_year = int(new_year_option) if str(new_year_option).isdigit() else None
+                        
+                        user_data = {
+                            "name": new_name,
+                            "email": new_email,
+                            "password": new_password,
+                            "role": new_role,
+                            "year_of_study": user_year
+                        }
+                        try:
+                            response = requests.post(
+                                f"{BACKEND_URL}/register", 
+                                json=user_data, 
+                                headers=headers # Send auth headers
+                            )
+                            if response.status_code == 200:
+                                st.success(f"User '{new_name}' ({new_role}) created successfully!")
+                                st.rerun() # Refresh the page to show the new user
+                            elif response.status_code == 400:
+                                st.error(f"Failed to create user: {response.json().get('detail', 'Bad request')}")
+                            else:
+                                st.error(f"Error {response.status_code}: {response.text}")
+                        except Exception as e:
+                            st.error(f"An error occurred: {e}")
         
         st.divider() 
         st.subheader("Current Users")
@@ -497,8 +665,17 @@ else:
                     cols[3].write(user_data['role'])
                     cols[4].write(user_data['year'])
                     if cols[5].button("Delete", key=f"delete_{row_key}"):
-                        # ... (your existing delete button code) ...
-                        pass
+                        try:
+                            # Use the user ID (row_key) for the delete request
+                            response = requests.delete(f"{BACKEND_URL}/users/{row_key}", headers=headers)
+                            if response.status_code == 200:
+                                st.success(f"User {user_data['name']} deleted!")
+                                st.rerun()
+                            else:
+                                st.error(f"Delete failed: {response.text}")
+                        except Exception as e:
+                            st.error(f"An error occurred: {e}")
+                        
             else: st.error(f"Failed to fetch users: {response.text}")
         except Exception as e: st.error(f"An error occurred: {e}")
 
