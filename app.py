@@ -418,7 +418,7 @@ else:
                         "internal_3": internal_3
                     }
                     try:
-                        response = requests.post(f"{BACKEND_URL}/grades", json=marks_data, headers=headers)
+                        response = requests.post(f"{BACKEND_URL}/marks/internal", json=marks_data, headers=headers)
                         if response.status_code == 200:
                             st.success("Marks updated successfully!")
                         else:
@@ -543,7 +543,7 @@ else:
                         "course_id": enroll_course_id
                     }
                     try:
-                        response = requests.post(f"{BACKEND_URL}/students/enroll", json=enroll_data, headers=headers)
+                        response = requests.get(f"{BACKEND_URL}/marks/student", headers=headers, params=params)
                         if response.status_code == 200:
                             st.success(f"Student {enroll_student_email} enrolled in course {enroll_course_id}!")
                         else:

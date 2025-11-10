@@ -61,8 +61,6 @@ def register_user(user: User):
         if conn:
             conn.close()
 
-# (Keep the existing imports and register_user function)
-
 @router.post("/login")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Logs in a user and returns an access token."""
