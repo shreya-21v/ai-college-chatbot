@@ -429,8 +429,8 @@ else:
                 
                 # --- NEW: Filter students and courses based on the selected year ---
                 try:
-                    students_in_year = [s for s in st.session_state.all_students_list if s.get('year_of_study') == selected_year]
-                    courses_in_year = [c for c in st.session_state.all_courses_list if c.get('year_of_study') == selected_year]
+                    students_in_year = [s for s in st.session_state.all_students_list if str(s.get('year_of_study')) == str(selected_year)]
+                    courses_in_year = [c for c in st.session_state.all_courses_list if str(c.get('year_of_study')) == str(selected_year)]
                     
                     # Create maps of {Name: ID} for the dropdowns
                     student_name_map = {s['name']: s['id'] for s in students_in_year}
