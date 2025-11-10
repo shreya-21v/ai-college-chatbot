@@ -33,17 +33,9 @@ class CourseBase(BaseModel):
     name: str
     description: str
     instructor: str
-    year_of_study: int
 
 class CourseCreate(CourseBase):
     pass # For creating a new course
-
-class CourseCreate(CourseBase):
-    pass # Will inherit year_of_study
-
-class Course(CourseBase):
-    id: int
-    model_config = ConfigDict(from_attributes=True)
 
 class Course(CourseBase):
     id: int
@@ -109,20 +101,6 @@ class EnrollmentCreate(BaseModel):
 class PromptUpdate(BaseModel):
     prompt: str
 
-class User(BaseModel):
-    name: str
-    email: str
-    password: str
-    role: str
-    year_of_study: Optional[int] = None # <-- ADD THIS
-
-class UserDisplay(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    email: str
-    role: str
-    year_of_study: Optional[int] = None # <-- ADD THIS
 
 
 
