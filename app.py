@@ -361,6 +361,29 @@ else:
              st.write(f"No instructors found {f'for Year {year_filter}' if year_filter and year_filter != 'All' else ''}.")
 
     elif page == "Course Management":
+        if 'all_students_list' not in st.session_state:
+            st.session_state.all_students_list = []
+            try:
+                # Get ALL students (no year filter)
+                response = requests.get(f"{BACKEND_URL}/students", headers=headers)
+                if response.status_code == 200:
+                    st.session_state.all_students_list = response.json()
+                else:
+                    st.error(f"Could not load student list: {response.text}")
+            except Exception as e:
+                st.error(f"Error loading students: {e}")
+
+        if 'all_courses_list' not in st.session_state:
+            st.session_state.all_courses_list = []
+            try:
+                # Get ALL courses (no year filter)
+                response = requests.get(f"{BACKEND_URL}/courses", headers=headers)
+                if response.status_code == 200:
+                    st.session_state.all_courses_list = response.json()
+                else:
+                    st.error(f"Could not load course list: {response.text}")
+            except Exception as e:
+                st.error(f"Error loading courses: {e}")
         st.title("📚 Course Management")
         st.write("Here you can view, add, edit, and delete courses.")
         
@@ -398,11 +421,35 @@ else:
                         except Exception as e:
                             st.error(f"An error occurred: {e}")
         with st.expander("✍️ Enter/Update Internal Marks"):
-            # ... (Your existing Enter/Update Marks form code) ...
             with st.form("add_marks_form", clear_on_submit=True):
                 st.write("Enter or update marks for a student in a specific course.")
-                student_email = st.text_input("Student Email")
-                course_id = st.number_input("Course ID", min_value=1, step=1)
+                
+                # --- NEW: Year filter ---
+                selected_year = st.selectbox("Filter by Year", [1, 2, 3, 4], key="marks_year_filter")
+                
+                # --- NEW: Filter students and courses based on the selected year ---
+                try:
+                    students_in_year = [s for s in st.session_state.all_students_list if s.get('year_of_study') == selected_year]
+                    courses_in_year = [c for c in st.session_state.all_courses_list if c.get('year_of_study') == selected_year]
+                    
+                    # Create maps of {Name: ID} for the dropdowns
+                    student_name_map = {s['name']: s['id'] for s in students_in_year}
+                    course_name_map = {c['name']: c['id'] for c in courses_in_year}
+
+                    if not student_name_map:
+                        st.warning(f"No students found for Year {selected_year}. Add students first.")
+                    if not course_name_map:
+                        st.warning(f"No courses found for Year {selected_year}. Add courses first.")
+
+                    # --- NEW: Dropdowns for Student and Course names ---
+                    selected_student_name = st.selectbox("Select Student", list(student_name_map.keys()))
+                    selected_course_name = st.selectbox("Select Course", list(course_name_map.keys()))
+                
+                except Exception as e:
+                    st.error("Error preparing dropdowns. Make sure student/course data is loaded.")
+                    st.stop() # Stop rendering this form if data isn't ready
+
+                # --- (Original marks inputs) ---
                 internal_1 = st.number_input("Internal 1 Marks (out of 25)", min_value=0.0, max_value=25.0, step=0.5)
                 internal_2 = st.number_input("Internal 2 Marks (out of 25)", min_value=0.0, max_value=25.0, step=0.5)
                 internal_3 = st.number_input("Internal 3 Marks (out of 25)", min_value=0.0, max_value=25.0, step=0.5)
@@ -410,21 +457,29 @@ else:
                 submitted_add_marks = st.form_submit_button("Submit Marks")
                 
                 if submitted_add_marks:
-                    marks_data = {
-                        "student_email": student_email,
-                        "course_id": course_id,
-                        "internal_1": internal_1,
-                        "internal_2": internal_2,
-                        "internal_3": internal_3
-                    }
-                    try:
-                        response = requests.post(f"{BACKEND_URL}/marks/internal", json=marks_data, headers=headers)
-                        if response.status_code == 200:
-                            st.success("Marks updated successfully!")
-                        else:
-                            st.error(f"Failed to update marks: {response.text}")
-                    except Exception as e:
-                        st.error(f"An error occurred: {e}")
+                    # Make sure a student and course were actually selected
+                    if not selected_student_name or not selected_course_name:
+                        st.error("Please select a student and a course.")
+                    else:
+                        # --- NEW: Get the ID from the selected name ---
+                        student_id = student_name_map[selected_student_name]
+                        course_id = course_name_map[selected_course_name]
+                        
+                        marks_data = {
+                            "student_id": student_id,
+                            "course_id": course_id,
+                            "internal_1": internal_1,
+                            "internal_2": internal_2,
+                            "internal_3": internal_3
+                        }
+                        try:
+                            response = requests.post(f"{BACKEND_URL}/grades", json=marks_data, headers=headers)
+                            if response.status_code == 200:
+                                st.success("Marks updated successfully!")
+                            else:
+                                st.error(f"Failed to update marks: {response.text}")
+                        except Exception as e:
+                            st.error(f"An error occurred: {e}")
         with st.expander("🗓️ Add Course Schedule Entry"):
             # ... (Your existing Add Schedule Entry form code) ...
             with st.form("add_schedule_form", clear_on_submit=True):
