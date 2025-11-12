@@ -473,6 +473,50 @@ def upsert_internal_marks(
         if cursor: cursor.close()
         if conn: conn.close()
 
+@app.get("/reports/course-status/{course_id}", tags=["Reports", "Staff Features"])
+def get_student_status_for_course(course_id: int, user: dict = require_staff_or_admin):
+    """
+    Gets the name, total marks, and pass/fail status for every student
+    enrolled in a specific course.
+    """
+    conn = None; cursor = None
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                u.name as student_name, 
+                m.internal_1, 
+                m.internal_2, 
+                m.internal_3,
+                (m.internal_1 + m.internal_2 + m.internal_3) as total_marks
+            FROM internal_marks m
+            JOIN users u ON m.student_id = u.id
+            WHERE m.course_id = %s
+            ORDER BY u.name
+        ''', (course_id,))
+        
+        student_marks = cursor.fetchall()
+        
+        pass_mark = 26.25
+        report_data = []
+        for row in student_marks:
+            status = "Pass" if row['total_marks'] >= pass_mark else "Fail"
+            report_data.append({
+                "student_name": row['student_name'],
+                "total_marks": row['total_marks'],
+                "status": status
+            })
+            
+        return report_data
+        
+    except (Exception, database.psycopg2.DatabaseError) as error:
+        print(f"DB Error getting course status report: {error}")
+        raise HTTPException(status_code=500, detail="Database error generating report.")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 @app.post("/schedules", tags=["Staff Features"])
 def add_course_schedule(
     schedule_data: ScheduleCreate,
@@ -559,7 +603,6 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         if not student:
             raise HTTPException(status_code=404, detail="Student not found.")
         
-        # --- THIS BLOCK IS NOW FIXED ---
         # Get Student's Internal Marks
         cursor.execute('''
             SELECT c.name as course_name, m.internal_1, m.internal_2, m.internal_3
@@ -568,7 +611,6 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
             WHERE m.student_id = %s
         ''', (student_id,))
         marks = cursor.fetchall()
-        # --- END OF FIX ---
 
         # Get Student's Enrolled Courses
         cursor.execute('''
@@ -602,7 +644,6 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         else:
             prompt += "- Not enrolled in any courses.\n"
 
-        # --- THIS BLOCK IS NOW FIXED ---
         prompt += "\nINTERNAL MARKS (out of 25 each):\n"
         if marks:
             for mark in marks:
@@ -610,7 +651,6 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
                 prompt += f"- {mark['course_name']}: I1: {mark['internal_1']}, I2: {mark['internal_2']}, I3: {mark['internal_3']} (Total: {total}/75)\n"
         else:
             prompt += "- No marks recorded.\n"
-        # --- END OF FIX ---
 
         prompt += "\nRECENT CHATBOT ENGAGEMENT (User message -> Bot response):\n"
         if chat_history:

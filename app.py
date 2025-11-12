@@ -643,6 +643,61 @@ else:
 
     elif page == "Reports":
         st.title("📊 Reports")
+        
+        # --- NEW: Course-Specific Roster Report (No Year Filter) ---
+        st.subheader("Student Status by Course")
+        
+        # Load all courses for a dropdown
+        try:
+            # We fetch ALL courses, no 'params' needed
+            courses_resp = requests.get(f"{BACKEND_URL}/courses", headers=headers)
+            if courses_resp.status_code == 200:
+                courses_list = courses_resp.json()
+                # Create a {Name: ID} map from all courses
+                course_name_map = {c['name']: c['id'] for c in courses_list} 
+                
+                if not course_name_map:
+                    st.warning("No courses found. Please add courses in 'Course Management'.")
+                else:
+                    selected_course_name = st.selectbox("Select a Course to Report On", list(course_name_map.keys()))
+                    
+                    if st.button("Generate Roster Report"):
+                        course_id = course_name_map[selected_course_name]
+                        # Call the NEW endpoint
+                        roster_resp = requests.get(f"{BACKEND_URL}/reports/course-status/{course_id}", headers=headers)
+                        
+                        if roster_resp.status_code == 200:
+                            student_statuses = roster_resp.json()
+                            if student_statuses:
+                                passed_students = [s for s in student_statuses if s['status'] == 'Pass']
+                                failed_students = [s for s in student_statuses if s['status'] == 'Fail']
+                                
+                                st.markdown(f"**Report for {selected_course_name}**")
+                                
+                                st.markdown("#### ✅ Passed Students")
+                                if passed_students:
+                                    for s in passed_students:
+                                        st.write(f"- {s['student_name']} (Total: {s['total_marks']}/75)")
+                                else:
+                                    st.write("No students have passed.")
+
+                                st.markdown("#### ❌ Failed Students")
+                                if failed_students:
+                                    for s in failed_students:
+                                        st.write(f"- {s['student_name']} (Total: {s['total_marks']}/75)")
+                                else:
+                                    st.write("No students have failed.")
+                                    
+                            else:
+                                st.write("No students have marks recorded for this course.")
+                        else:
+                            st.error(f"Failed to get report: {roster_resp.text}")
+            else:
+                st.error("Could not load courses for dropdown.")
+        except Exception as e:
+            st.error(f"An error occurred loading course list: {e}")
+
+        st.divider()
         st.subheader("Grade Distribution per Course")
         try:
             response = requests.get(f"{BACKEND_URL}/reports/grade-distribution", headers=headers)
