@@ -68,20 +68,6 @@ def create_tables():
             )
         ''')
 
-        # Grades Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS grades (
-                id SERIAL PRIMARY KEY,
-                student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-                grade TEXT NOT NULL
-            )
-        ''')
-
-        cursor.execute('''
-            DROP TABLE IF EXISTS grades CASCADE;
-        ''')
-
         # Internal_marks table 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS internal_marks (

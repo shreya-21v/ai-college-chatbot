@@ -559,14 +559,16 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         if not student:
             raise HTTPException(status_code=404, detail="Student not found.")
         
-        # Get Student's Grades
+        # --- THIS BLOCK IS NOW FIXED ---
+        # Get Student's Internal Marks
         cursor.execute('''
-            SELECT c.name as course_name, g.grade 
-            FROM grades g
-            JOIN courses c ON g.course_id = c.id
-            WHERE g.student_id = %s
+            SELECT c.name as course_name, m.internal_1, m.internal_2, m.internal_3
+            FROM internal_marks m
+            JOIN courses c ON m.course_id = c.id
+            WHERE m.student_id = %s
         ''', (student_id,))
-        grades = cursor.fetchall()
+        marks = cursor.fetchall()
+        # --- END OF FIX ---
 
         # Get Student's Enrolled Courses
         cursor.execute('''
@@ -600,12 +602,15 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         else:
             prompt += "- Not enrolled in any courses.\n"
 
-        prompt += "\nGRADES:\n"
-        if grades:
-            for grade in grades:
-                prompt += f"- {grade['course_name']}: {grade['grade']}\n"
+        # --- THIS BLOCK IS NOW FIXED ---
+        prompt += "\nINTERNAL MARKS (out of 25 each):\n"
+        if marks:
+            for mark in marks:
+                total = mark['internal_1'] + mark['internal_2'] + mark['internal_3']
+                prompt += f"- {mark['course_name']}: I1: {mark['internal_1']}, I2: {mark['internal_2']}, I3: {mark['internal_3']} (Total: {total}/75)\n"
         else:
-            prompt += "- No grades recorded.\n"
+            prompt += "- No marks recorded.\n"
+        # --- END OF FIX ---
 
         prompt += "\nRECENT CHATBOT ENGAGEMENT (User message -> Bot response):\n"
         if chat_history:

@@ -68,7 +68,7 @@ class InternalMarkDisplay(InternalMarkBase):
         if self.total_marks >= pass_mark:
             return "Average marks"
         else:
-            return "No avarage Marks"
+            return "No average Marks"
 
 # --- Schedule Models ---
 class ScheduleCreate(BaseModel):
