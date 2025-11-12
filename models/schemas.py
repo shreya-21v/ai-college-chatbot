@@ -26,7 +26,7 @@ class Chat(BaseModel):
     user_id: int
     message: str
     response: str
-    timestamp: datetime # Will be read from DB
+    timestamp: datetime 
 
 # --- Course Models ---
 class CourseBase(BaseModel):
@@ -35,14 +35,13 @@ class CourseBase(BaseModel):
     instructor: str
 
 class CourseCreate(CourseBase):
-    pass # For creating a new course
+    pass 
 
 class Course(CourseBase):
     id: int
     model_config = ConfigDict(from_attributes=True) 
 
 class InternalMarkBase(BaseModel):
-    # Pydantic validation: allows integers between 0 and 25
     internal_1: conint(ge=0, le=25) = 0
     internal_2: conint(ge=0, le=25) = 0
     internal_3: conint(ge=0, le=25) = 0
@@ -52,18 +51,15 @@ class InternalMarkCreate(InternalMarkBase):
     course_id: int
 
 class InternalMarkDisplay(InternalMarkBase):
-    model_config = ConfigDict(from_attributes=True) # For reading from DB
+    model_config = ConfigDict(from_attributes=True) 
     
     course_name: str
     student_name: str
-    
-    # This automatically calculates the total from the other 3 fields
     @computed_field
     @property
     def total_marks(self) -> int:
         return self.internal_1 + self.internal_2 + self.internal_3
 
-    # This automatically calculates the status based on your 35% rule
     @computed_field
     @property
     def status(self) -> str:
@@ -90,7 +86,7 @@ class Schedule(BaseModel):
     start_time: str
     end_time: str
     location: Optional[str] = None
-    course_name: str # From the JOIN query
+    course_name: str 
 
 # --- Enrollment Models ---
 class EnrollmentCreate(BaseModel):

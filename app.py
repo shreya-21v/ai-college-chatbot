@@ -1,12 +1,9 @@
 import streamlit as st
 import requests
-import urllib.parse # For instructor schedules
+import urllib.parse
 
-# --- Configuration ---
-# Make sure this is your public Render URL
 BACKEND_URL = "https://ai-college-chatbot-backend.onrender.com" 
 
-# --- NEW STYLING (Inject custom CSS) ---
 st.markdown("""
 <style>
 /* Center the main content block for the login page */
@@ -56,8 +53,7 @@ h2 {
 """, unsafe_allow_html=True)
 # --- END STYLING ---
 
-
-# --- Utility Functions (No changes here) ---
+# --- Utility Functions ---
 
 def login_user(username, password):
     """Attempts to log in the user via the FastAPI backend."""
@@ -140,25 +136,24 @@ def get_chat_response(message):
 
 # --- Main App Logic ---
 
-st.set_page_config(page_title="Brindavan Group of Institutions",page_icon="🎓", layout="wide") # Use wide layout
+st.set_page_config(page_title="Brindavan Group of Institutions",page_icon="🎓", layout="wide") 
 
-# Initialize session state if it doesn't exist
+# Initializing session state if it doesn't exist
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
-# --- 1. LOGIN PAGE (MODIFIED) ---
+# --- 1. LOGIN PAGE ---
 if not st.session_state['logged_in']:
     
     st.title("🎓 Hello, from your personal college guide")
     
     # Placeholder for a college banner image
     st.image("banner.png", use_container_width=True)
-    st.write("") # Add some space
+    st.write("")
     
-    # Use columns to center the forms in a narrower block
-    col1, col_main, col3 = st.columns([1, 1.5, 1]) # 1:1.5:1 ratio centers the middle column
+    col1, col_main, col3 = st.columns([1, 1.5, 1]) 
     
     with col_main:
         # Login Form Card
@@ -203,7 +198,6 @@ if not st.session_state['logged_in']:
 
 # --- 2. MAIN APP INTERFACE (Role-Based) ---
 else:
-    # This section remains unchanged
     user_role = st.session_state.get('user_role', 'user') 
     user_name = st.session_state.get('user_name', 'user') 
 
@@ -231,7 +225,6 @@ else:
     st.sidebar.divider() 
     st.sidebar.button("Logout", on_click=logout_user)
 
-    # --- Main Content Area (Conditional Rendering) ---
     
     token = f"Bearer {st.session_state.get('access_token')}"
     headers = {"Authorization": token}
@@ -263,7 +256,7 @@ else:
         headers = {"Authorization": token}
 
         try:
-            # Call the new endpoint
+            # Calling the new endpoint
             response = requests.get(f"{BACKEND_URL}/marks/student", headers=headers)
 
             if response.status_code == 200:
@@ -271,7 +264,7 @@ else:
                 if marks_list:
                     st.subheader("Your Marks (All internals out of 25)")
 
-                    # Define pass mark
+                    # Defining pass mark
                     pass_mark = 26.25 # 35% of 75
 
                     for item in marks_list:
@@ -279,14 +272,14 @@ else:
                         total = item['total_marks']
                         status = item['status']
 
-                        # Use columns for a clean layout
+                        # Using columns for a clean layout
                         col1, col2, col3, col4, col5 = st.columns(5)
                         col1.metric("Internal 1", f"{item['internal_1']} / 25")
                         col2.metric("Internal 2", f"{item['internal_2']} / 25")
                         col3.metric("Internal 3", f"{item['internal_3']} / 25")
                         col4.metric("Total", f"{total} / 75")
 
-                        # Show Pass/Fail status with color
+                        # Showing Pass/Fail status with color
                         if status == "Pass":
                             col5.success(f"Status: {status}")
                         else:
@@ -294,10 +287,8 @@ else:
                         difference = total - pass_mark
                         
                         if status == "Average marks":
-                            # Use :.2f to format to 2 decimal places
                             st.caption(f"You are {difference:.2f} marks above the passing mark of {pass_mark}.")
                         else:
-                            # Use abs() to show a positive number for how many marks are needed
                             st.caption(f"You are {abs(difference):.2f} marks below the passing mark of {pass_mark}.")
                         st.divider()
 
@@ -326,7 +317,7 @@ else:
                         "End Time": s['end_time'],
                         "Location": s.get('location', 'N/A')
                     } for s in schedules]
-                    st.dataframe(display_data, use_container_width=True) # Corrected
+                    st.dataframe(display_data, use_container_width=True) 
                 else:
                     st.write("No schedule information found.")
             else:
@@ -356,6 +347,8 @@ else:
                     if schedule_resp.status_code == 200:
                         instructor_schedule = schedule_resp.json()
                         if instructor_schedule:
+                            day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                            instructor_schedule.sort(key=lambda item: (day_order.index(item['day_of_week']), item['start_time']))
                             st.subheader(f"Teaching Schedule for {selected_instructor}")
                             display_data = [{
                                 "Course Name": s['course_name'], 
@@ -364,7 +357,7 @@ else:
                                 "End Time": s['end_time'],
                                 "Location": s.get('location', 'N/A')
                             } for s in instructor_schedule]
-                            st.dataframe(display_data, use_container_width=True) # Corrected
+                            st.dataframe(display_data, use_container_width=True) 
                         else:
                             st.write(f"{selected_instructor} has no scheduled classes found.")
                     else:
@@ -558,12 +551,9 @@ else:
                 if not students:
                     st.write("No students found.")
                 else:
-                    # --- Create a dynamic list instead of a dataframe ---
-                    st.markdown("---") # Start with a line
+                    st.markdown("---")
                     for s in students:
                         student_id = s['id']
-
-                        # Create columns for student info and the button
                         col1, col2, col3 = st.columns([3, 3, 2])
 
                         with col1:
@@ -574,7 +564,7 @@ else:
                             st.write(s['email'])
 
                         with col3:
-                            # "Analyze" button
+                            # The AI summary generation section
                             if st.button("Generate AI Summary", key=f"analyze_{student_id}"):
                                 with st.spinner(f"Analyzing {s['name']}..."):
                                     try:
@@ -583,18 +573,16 @@ else:
                                             headers=headers
                                         )
                                         if summary_resp.status_code == 200:
-                                            # Store summary in session state to keep it open
                                             st.session_state[f"summary_for_{student_id}"] = summary_resp.json().get("summary")
                                         else:
                                             st.error(f"Failed to get summary: {summary_resp.text}")
                                     except Exception as e:
                                         st.error(f"Error during analysis: {e}")
 
-                        # Display the summary if it exists in session state
                         if f"summary_for_{student_id}" in st.session_state:
                             st.info(st.session_state[f"summary_for_{student_id}"])
 
-                        st.markdown("---") # Divider for next student
+                        st.markdown("---") 
 
             elif response.status_code == 403:
                 st.error("Access denied. Staff or Admin only.")
@@ -701,7 +689,7 @@ else:
                 student_usage = usage_response.json()
                 if student_usage:
                      display_data = [{"Name": s['name'], "Email": s['email'], "Messages Sent": s['message_count']} for s in student_usage]
-                     st.dataframe(display_data, use_container_width=True) # Corrected
+                     st.dataframe(display_data, use_container_width=True) 
                 else:
                     st.write("No student conversation data found.")
             elif usage_response.status_code == 403:
@@ -720,7 +708,6 @@ else:
         st.subheader("Chatbot Prompt Customization")
 
         try:
-            # Get the current prompt
             response_get = requests.get(f"{BACKEND_URL}/admin/prompt", headers=headers)
             
             if response_get.status_code == 200:

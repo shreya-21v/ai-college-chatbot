@@ -11,7 +11,6 @@ JWT_SECRET = config('JWT_SECRET')
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# This tells FastAPI where to check for the token (in the "Authorization" header)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def create_access_token(data: dict):
@@ -49,18 +48,11 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        # --- MODIFIED SQL QUERY ---
-        # Fetch 'year_of_study' along with other details
         cursor.execute('SELECT id, name, role, email, year_of_study FROM users WHERE email = %s', (email,))
         db_user = cursor.fetchone()
 
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
-
-        # RealDictCursor returns a dict-like object.
-        # It's better to return the whole dict.
-        # Pydantic will validate it in the endpoint.
         return db_user
 
     except HTTPException:
@@ -74,20 +66,18 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         if conn:
             conn.close()
 
-# REPLACE your old require_role function with this new one
 def require_role(required_roles: List[str]):
     """
     A dependency that verifies the user is logged in and has one of
     the specified roles.
     """
-    def get_user_by_role(user: dict = Depends(get_current_user)): # User is now a dict from get_current_user
+    def get_user_by_role(user: dict = Depends(get_current_user)): 
         user_role = user.get("role")
         if user_role not in required_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied: Requires one of {required_roles} role(s)"
             )
-        # Add user_id directly to the dict for convenience elsewhere
         user['user_id'] = user['id']
-        return user # Just return the user dict we already have
+        return user 
     return get_user_by_role

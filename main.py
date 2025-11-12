@@ -1,26 +1,26 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from auth.router import router as auth_router
 from decouple import config
-import database # Import the refactored database module
-from models.schemas import ( # Using parenthesis for multiple lines
+import database 
+from models.schemas import ( 
     Course, UserDisplay, ChatQuery, Chat, CourseCreate, Schedule,
     ScheduleCreate, EnrollmentCreate, PromptUpdate, InternalMarkCreate, InternalMarkDisplay
 )
-from auth.jwt import require_role, get_current_user # These are updated for psycopg2
+from auth.jwt import require_role, get_current_user 
 from typing import List
 from langdetect import detect, LangDetectException
 from collections import Counter
 import urllib.parse
 from database import create_tables
 
-# --- NEW: Google Gemini API Setup ---
+# Google Gemini API Setup
 import google.generativeai as genai
 GOOGLE_API_KEY = config('GOOGLE_API_KEY', default=None)
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 else:
     print("Warning: GOOGLE_API_KEY not found. Chatbot AI will not function.")
-# --- End Gemini Setup ---
+# End Gemini Setup 
 
 
 # --- Simulated FAQ Database ---
@@ -51,7 +51,6 @@ app.include_router(auth_router, tags=["Authentication"])
 def read_root():
     return {"Hello": "Backend"}
 
-# --- Dependencies ---
 any_logged_in_user = Depends(get_current_user)
 require_staff_or_admin = Depends(require_role(required_roles=["staff", "admin"]))
 require_admin_only = Depends(require_role(required_roles=["admin"]))
@@ -91,7 +90,7 @@ def get_all_courses(user: dict = any_logged_in_user):
         conn = database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT id, name, description, instructor FROM courses')
-        courses = cursor.fetchall() # RealDictCursor returns list of dicts
+        courses = cursor.fetchall() 
         return courses
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error fetching courses: {error}")
@@ -224,11 +223,7 @@ def delete_user(user_id: int, user: dict = require_admin_only):
         if conn: conn.close()
 
 # ===============================================
-#  CHATBOT ENDPOINT (*** UPDATED FOR GEMINI ***)
-# ===============================================
-
-# ===============================================
-#  CHATBOT ENDPOINT (*** UPDATED FOR GEMINI & PROMPT CUSTOMIZATION ***)
+#  CHATBOT ENDPOINT (GEMINI & PROMPT CUSTOMIZATION)
 # ===============================================
 
 @app.post("/chat", response_model=Chat, tags=["Chatbot"])
@@ -249,7 +244,6 @@ def handle_chat(
     except LangDetectException:
         print("Language detection failed, defaulting to English.")
 
-    # --- FAQ Logic ---
     faq_context = ""
     user_msg_lower = user_message.lower()
     faq_keywords = {
@@ -272,17 +266,15 @@ def handle_chat(
         if prompt_row:
             system_prompt_base = prompt_row['value']
         else:
-            system_prompt_base = "You are a helpful college chatbot." # Fallback
+            system_prompt_base = "You are a helpful college chatbot." 
 
-        # --- 2. Fetch chat history from DB ---
         cursor.execute(
             'SELECT message, response FROM conversations WHERE user_id = %s ORDER BY timestamp ASC',
             (user_id,)
         )
         history_rows = cursor.fetchall()
         
-        # --- 3. Build messages for Gemini ---
-        system_prompt = f"{system_prompt_base} Please respond in {detected_language}." # Use DB prompt
+        system_prompt = f"{system_prompt_base} Please respond in {detected_language}." 
         if faq_context:
             system_prompt += f" {faq_context}"
         
@@ -291,7 +283,6 @@ def handle_chat(
             gemini_history.append({"role": "user", "parts": [{"text": row['message']}]})
             gemini_history.append({"role": "model", "parts": [{"text": row['response']}]})
 
-        # --- 4. Real Google Gemini API Call ---
         try:
             model = genai.GenerativeModel(
                 model_name='gemini-2.5-flash-preview-09-2025', 
@@ -304,9 +295,8 @@ def handle_chat(
         except Exception as e:
             print(f"Google Gemini API error: {e}")
             raise HTTPException(status_code=500, detail="Error connecting to AI service.")
-        # --- End Real AI Call ---
 
-        # --- 5. Save conversation to database ---
+        # --- Save conversation to database ---
         cursor.execute(
             'INSERT INTO conversations (user_id, message, response) VALUES (%s, %s, %s) RETURNING id',
             (user_id, user_message, bot_response)
@@ -316,7 +306,7 @@ def handle_chat(
         new_chat_id = new_chat_id_row['id']
         conn.commit()
 
-        # --- 6. Get new conversation to return it ---
+        # --- Get new conversation to return it ---
         cursor.execute('SELECT * FROM conversations WHERE id = %s', (new_chat_id,))
         new_chat = cursor.fetchone()
         if not new_chat: raise HTTPException(status_code=404, detail="Saved chat not found.")
@@ -354,9 +344,6 @@ def get_chat_history(user: dict = any_logged_in_user):
 # ===============================================
 #  STUDENT FEATURES ENDPOINTS
 # ===============================================
-
-# (Inside main.py)
-# --- REPLACE THE OLD 'GET /grades' with this ---
 @app.get("/marks/student", response_model=List[InternalMarkDisplay], tags=["Student Features"])
 def get_student_marks(user: dict = any_logged_in_user):
     """
@@ -370,7 +357,6 @@ def get_student_marks(user: dict = any_logged_in_user):
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # Join tables to get all required info for the Pydantic model
         cursor.execute('''
             SELECT 
                 m.student_id, m.course_id, m.internal_1, m.internal_2, m.internal_3,
@@ -382,7 +368,7 @@ def get_student_marks(user: dict = any_logged_in_user):
             WHERE m.student_id = %s
         ''', (student_id,))
         marks = cursor.fetchall()
-        return marks # Pydantic will auto-calculate total and status
+        return marks 
     except (Exception, database.psycopg2.DatabaseError) as error:
         print(f"DB Error fetching marks: {error}")
         raise HTTPException(status_code=500, detail="Database error fetching marks.")
@@ -451,8 +437,6 @@ def get_all_students(user: dict = require_staff_or_admin):
         if cursor: cursor.close()
         if conn: conn.close()
 
-# (Inside main.py)
-# --- REPLACE THE OLD 'POST /grades' with this ---
 @app.post("/marks/internal", tags=["Staff Features"])
 def upsert_internal_marks(
     marks_data: InternalMarkCreate,
@@ -466,9 +450,6 @@ def upsert_internal_marks(
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        # This is an "UPSERT" command:
-        # It tries to INSERT. If it finds a conflict on (student_id, course_id),
-        # it will UPDATE the existing row instead.
         cursor.execute(
             '''
             INSERT INTO internal_marks (student_id, course_id, internal_1, internal_2, internal_3)
@@ -524,15 +505,14 @@ def add_course_schedule(
 @app.post("/enrollments", tags=["Staff Features"])
 def enroll_student_in_course(
     enrollment_data: EnrollmentCreate,
-    user: dict = require_staff_or_admin # Staff/Admin only
+    user: dict = require_staff_or_admin 
 ):
     """Enrolls a student in a course."""
     conn = None; cursor = None
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        # Check for duplicate enrollment first
+
         cursor.execute(
             "SELECT id FROM enrollments WHERE student_id = %s AND course_id = %s",
             (enrollment_data.student_id, enrollment_data.course_id)
@@ -541,17 +521,16 @@ def enroll_student_in_course(
         if existing:
             raise HTTPException(status_code=400, detail="Student is already enrolled in this course.")
 
-        # Create new enrollment
         cursor.execute(
             "INSERT INTO enrollments (student_id, course_id) VALUES (%s, %s)",
             (enrollment_data.student_id, enrollment_data.course_id)
         )
         conn.commit()
         
-    except database.psycopg2.IntegrityError as e: # Catch foreign key errors
+    except database.psycopg2.IntegrityError as e: 
          if conn: conn.rollback()
          raise HTTPException(status_code=400, detail=f"Invalid student or course ID: {e}")
-    except HTTPException: # Re-raise 400 error
+    except HTTPException: 
          raise
     except (Exception, database.psycopg2.DatabaseError) as error:
         if conn: conn.rollback()
@@ -574,13 +553,13 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         conn = database.get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Get Student Info
+        # Get Student Info
         cursor.execute("SELECT name, email FROM users WHERE id = %s AND role = 'student'", (student_id,))
         student = cursor.fetchone()
         if not student:
             raise HTTPException(status_code=404, detail="Student not found.")
         
-        # 2. Get Student's Grades
+        # Get Student's Grades
         cursor.execute('''
             SELECT c.name as course_name, g.grade 
             FROM grades g
@@ -589,7 +568,7 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         ''', (student_id,))
         grades = cursor.fetchall()
 
-        # 3. Get Student's Enrolled Courses
+        # Get Student's Enrolled Courses
         cursor.execute('''
             SELECT c.name as course_name, c.instructor
             FROM enrollments e
@@ -598,14 +577,14 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         ''', (student_id,))
         enrollments = cursor.fetchall()
 
-        # 4. Get Student's Recent Chat History (e.g., last 10 messages)
+        # Get Student's Recent Chat History (e.g., last 10 messages)
         cursor.execute(
             'SELECT message, response FROM conversations WHERE user_id = %s ORDER BY timestamp DESC LIMIT 10',
             (student_id,)
         )
         chat_history = cursor.fetchall()
 
-        # --- 5. Build the Prompt for the AI ---
+        # Build the Prompt for the AI 
         prompt = f"""
         You are an academic advisor. Analyze the following student's data and provide a 3-4 sentence professional summary of their academic progress, engagement, and any potential areas of concern.
 
@@ -630,18 +609,17 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
 
         prompt += "\nRECENT CHATBOT ENGAGEMENT (User message -> Bot response):\n"
         if chat_history:
-            for chat in reversed(chat_history): # Show oldest first
+            for chat in reversed(chat_history): 
                 prompt += f"- User: \"{chat['message']}\" -> Bot: \"{chat['response']}\"\n"
         else:
             prompt += "- No recent chat history.\n"
         
         prompt += "\nSUMMARY:"
-        # --- End of Prompt ---
 
         if not GOOGLE_API_KEY:
              raise HTTPException(status_code=500, detail="AI service is not configured.")
 
-        # --- 6. Call Gemini AI (One-shot generation, not chat) ---
+        # Call Gemini AI 
         try:
             model = genai.GenerativeModel(model_name='gemini-2.5-flash-preview-09-2025')
             response = model.generate_content(prompt)
@@ -661,8 +639,6 @@ def get_student_summary(student_id: int, user: dict = require_staff_or_admin):
         if cursor: cursor.close()
         if conn: conn.close()
 
-# (Inside main.py)
-# --- REPLACE THE OLD 'GET /reports/grade-distribution' with this ---
 @app.get("/reports/grade-distribution", tags=["Reports"])
 def get_grade_distribution_report(user: dict = require_staff_or_admin):
     conn = None; cursor = None
@@ -676,14 +652,11 @@ def get_grade_distribution_report(user: dict = require_staff_or_admin):
             course_id = course['id']
             course_name = course['name']
 
-            # Fetch total marks (internal_1 + 2 + 3) for the course
             cursor.execute(
                 "SELECT (internal_1 + internal_2 + internal_3) as total FROM internal_marks WHERE course_id = %s", 
                 (course_id,)
             )
             totals = cursor.fetchall()
-
-            # We will report on pass/fail counts
             pass_mark = 26.25
             status_counts = Counter("Pass" if row['total'] >= pass_mark else "Fail" for row in totals)
             report_data[course_name] = dict(status_counts)
@@ -742,8 +715,6 @@ def get_conversations_per_student(user: dict = require_admin_only):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
-
-# (Inside main.py, in the ADMIN FEATURES ENDPOINTS section)
 
 @app.get("/admin/prompt", tags=["Admin Features"])
 def get_system_prompt(user: dict = require_admin_only):
